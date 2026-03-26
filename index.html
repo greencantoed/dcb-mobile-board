@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0a0a2e">
+<title>DCB Mobile</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;overflow:hidden;background:#0a0a2e;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#fff}
+#root{height:100%;display:flex;flex-direction:column}
+</style>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useCallback, useEffect, useMemo } = React;
+
+const COLORS = {
+  cyan: { bg: "#0ff5ee", text: "#0a0a2e", border: "#00c4c0" },
+  magenta: { bg: "#ff6ec7", text: "#1a0020", border: "#cc58a0" },
+  violet: { bg: "#b967ff", text: "#1a0030", border: "#9050cc" },
+  yellow: { bg: "#ffe66d", text: "#2a2000", border: "#ccb850" },
+  mint: { bg: "#7afdd6", text: "#002a20", border: "#5cc4a8" },
+  coral: { bg: "#ff8a80", text: "#2a0a08", border: "#cc6e66" },
+  lavender: { bg: "#d4c4fb", text: "#1a1030", border: "#a89acc" },
+  peach: { bg: "#ffcba4", text: "#2a1808", border: "#cc9e80" },
+};
+
+const CATEGORIES = {
+  "SERIES": { color: "cyan", icon: "\u{1F4FA}" },
+  "PILOT \u2014 LOCKED": { color: "magenta", icon: "\u{1F512}" },
+  "PILOT \u2014 PROPOSED": { color: "violet", icon: "\u{1F4A1}" },
+  "PILOT \u2014 SHOT DOWN": { color: "coral", icon: "\u{1F480}" },
+  "EP2 \u2014 HUSTLES": { color: "yellow", icon: "\u{1F6CB}\uFE0F" },
+  "EP3 \u2014 ELARA": { color: "mint", icon: "\u{1F3CB}\uFE0F" },
+  "EP4 \u2014 BUY NOW DIE LATER": { color: "lavender", icon: "\u{1F4B3}" },
+  "EP5 \u2014 SASHA": { color: "peach", icon: "\u{1F3AC}" },
+  "PRODUCTION": { color: "cyan", icon: "\u{1F4CB}" },
+  "COMEDY RULES": { color: "magenta", icon: "\u{1F3AD}" },
+  "NEW": { color: "yellow", icon: "\u2728" },
+};
+const CAT_KEYS = Object.keys(CATEGORIES);
+const SHORT_NAMES = { "SERIES":"SERIES", "PILOT \u2014 LOCKED":"LOCKED", "PILOT \u2014 PROPOSED":"PROPOSED", "PILOT \u2014 SHOT DOWN":"SHOT DOWN", "EP2 \u2014 HUSTLES":"EP2", "EP3 \u2014 ELARA":"EP3", "EP4 \u2014 BUY NOW DIE LATER":"EP4", "EP5 \u2014 SASHA":"EP5", "PRODUCTION":"PROD", "COMEDY RULES":"COMEDY", "NEW":"NEW" };
+
+const STORAGE_KEY = "dcb_whiteboard_state";
+
+// Same INITIAL_IDEAS as desktop (abbreviated — loads from localStorage in practice)
+const INITIAL_IDEAS = [
+  { id: 1, cat: "SERIES", text: "5-episode hybrid anthology, Amsterdam. Working poor met een MacBook. Educated, financially precarious. Baton-pass structure \u2014 last frame of each ep introduces next protagonist.", pinned: true },
+  { id: 6, cat: "SERIES", text: "Ep1 (Edoardo) and Ep5 (Sasha) function as bookends. He can't monetise himself. She is monetised against her will. He gets fined at the gate. She walks away free." },
+  { id: 2, cat: "SERIES", text: "Visual language degrades across series. Ep1 crisp. By Ep5 compression artefacts, glitches, image rotting. Vaporwave becomes weirdcore.", pinned: true },
+  { id: 3, cat: "SERIES", text: "Three visual registers: Desktop Cinema (screen as narrative space), Videogame Sequences (RPG/visual novel \u2014 different per episode), Vaporwave Aesthetic (cyan/magenta/Memphis Design)." },
+  { id: 10, cat: "SERIES", text: "Simlish audio for all visual novel/RPG sequences. Content through text boxes. You have to READ." },
+  { id: 7, cat: "SERIES", text: "Comps: Atlanta (surreal played straight), Ramy (cultural specificity without explanation), Chungking Express (consumer products as emotional objects), Mr. Robot (desktop cinema)." },
+  { id: 9, cat: "SERIES", text: "Tone: comedy register is mo lei tau \u2014 dead serious commitment to absurd premises, no winking. Combined with Italian humiliation economics and manzai boke/tsukkomi." },
+  { id: 4, cat: "SERIES", text: "\"Describe the room, not the wallpaper.\" Specific character behaviour under pressure, not abstract statements about late capitalism." },
+  { id: 5, cat: "SERIES", text: "\"If you want politics go to the Hague or go vote, I tell stories.\" No framing through political/theoretical lenses." },
+  { id: 8, cat: "SERIES", text: "Audience: Zillennials (1993-1998) and older Gen Z. People who check their bank balance with one eye closed." },
+  { id: 11, cat: "SERIES", text: "Origin: 2021 experimental short \"Reflections on Dutch Capitalism\" \u2014 7min33s, all roles solo, Willem de Kooning Academy. Led to Fabrica and UdK Berlin." },
+  { id: 150, cat: "COMEDY RULES", text: "Mo lei tau: total commitment to absurd premises. No winking. Gap between sincerity and recognition IS the comedy." },
+  { id: 300, cat: "COMEDY RULES", text: "MO LEI TAU AS ENGINE: The comedy operates on hyper-specific absurdism and the mundane accumulation of chaos. It is not dark, dramatic, or melancholic. It is a picaresque stream where the surrealism is accepted as reality." },
+  { id: 152, cat: "COMEDY RULES", text: "Three registers: protagonist = mo lei tau (commitment), camera = Italian (detached), chat = manzai (correction)." },
+  { id: 151, cat: "COMEDY RULES", text: "Chat as distributed tsukkomi: COMPLETES the joke. Writing must leave structural gap where tsukkomi belongs." },
+  { id: 153, cat: "COMEDY RULES", text: "Dignity preserved through earnestness. Ganbare tradition. Laugh is with, not at." },
+  { id: 154, cat: "COMEDY RULES", text: "Pirandello bifocal: avvertimento (laughing at) \u2192 sentimento (laughing with through compassion)." },
+  { id: 158, cat: "COMEDY RULES", text: "Bella figura: dignity PERFORMED while crumbling. They know. They keep performing." },
+  { id: 155, cat: "COMEDY RULES", text: "Summarising a joke KILLS IT. Commit. Don't observe." },
+  { id: 157, cat: "COMEDY RULES", text: "Comedy and pathos in same frame. NOT sequenced. Simultaneity." },
+  { id: 219, cat: "COMEDY RULES", text: "SPENDING MECHANIC PRINCIPLE: A slope, not a repeating gag. The dam-break structure means the FIRST payment arriving is the trigger \u2014 then queued automated payments fire in machine-gun sequence." },
+  { id: 20, cat: "PILOT \u2014 LOCKED", text: "Logline: Political livestreamer with 65 viewers picks up package in centre, gets high, goes viral by accident, spends money he doesn't have, ends stuck at metro gate with declined card.", pinned: true },
+  { id: 21, cat: "PILOT \u2014 LOCKED", text: "Edoardo: Italian expat, late 20s. Aspirationally \u017Di\u017Eek. 65-70 regulars. Private Discord ~15 active. Stream NOT monetised (yet)." },
+  { id: 200, cat: "PILOT \u2014 LOCKED", text: "BESPOKE RANTS AS FREE SERVICE: Edoardo performs personalised anti-corporate rants on request. NEVER monetised. He gives away the one thing people would actually pay for." },
+  { id: 307, cat: "PILOT \u2014 LOCKED", text: "THE VILLAGE (65 VIEWERS): Bucolic, chill environment. He operates as a \"Jukebox of Rage\" \u2014 custom requests to philosophically destroy specific companies." },
+  { id: 22, cat: "PILOT \u2014 LOCKED", text: "Opens streaming to regulars, showing his own 2021 video. \"I was ahead of my time.\" Chat: \"bro we watched this a year ago.\" Doorbell \u2014 missed delivery." },
+  { id: 23, cat: "PILOT \u2014 LOCKED", text: "Chat pushes him outside: \"Bro just go get it yourself and stream it.\" They want the funny version. He hears \"we want more of you.\"" },
+  { id: 24, cat: "PILOT \u2014 LOCKED", text: "TRAM SCENE: Boards ranting, exits mid-sentence, forgets to check out. OV-chipkaart silently deducts. First invisible money loss." },
+  { id: 301, cat: "PILOT \u2014 LOCKED", text: "THE WALKING ODYSSEY: Weather is nice, chat says \"show us some dam bro.\" Edoardo CHOOSES to walk. Walking exposes him to ghosts of his past and immediate temptations." },
+  { id: 302, cat: "PILOT \u2014 LOCKED", text: "THE SMILING GHOST: Job history \u2014 max 14 days (night receptionist, cafes). Never dramatically fired. Called in sick, smiled politely, ghosted." },
+  { id: 25, cat: "PILOT \u2014 LOCKED", text: "COFFEESHOPS: 5-6 stops. Each a 10-15 second RPG transition (FFT/Fire Emblem grid). Money indicator ticking." },
+  { id: 304, cat: "PILOT \u2014 LOCKED", text: "FIDGET PROP (JOINT CONES): Empty plastic pre-roll cone tubes. 3-for-20 tourist deal. Accumulates throughout stream." },
+  { id: 305, cat: "PILOT \u2014 LOCKED", text: "FREDDY KRUEGER SURRENDER: Striped sweater he thinks is Syd Barrett. Chat calls it Freddy. By third joint, slides cones on fingers like claws." },
+  { id: 26, cat: "PILOT \u2014 LOCKED", text: "PAOLO STORY: Smartshop in a former church. Paolo (formerly Guido). Counted candy stores, decided civilisation was finished. Albanian monastery." },
+  { id: 202, cat: "PILOT \u2014 LOCKED", text: "MOTHER JOINS CHAT (~150 VIEWERS): Full legal name. Treats Twitch like WhatsApp. \"Edoardo did you eat today?\"" },
+  { id: 203, cat: "PILOT \u2014 LOCKED", text: "LORE KEEPERS INTERROGATE MOTHER: Fact-checking him THROUGH HIS OWN MOTHER via auto-translation. She's a primary source being cross-referenced." },
+  { id: 205, cat: "PILOT \u2014 LOCKED", text: "UNIVERSITY TOILET STOP: Free toilet (budget logic). Location unlocks personal anecdotes. Weed removes filter." },
+  { id: 206, cat: "PILOT \u2014 LOCKED", text: "PERSONAL ANECDOTES: Clubs he ran, women's clothes, canal pissing rituals. Most genuinely entertaining version. Chat loves it. He doesn't notice." },
+  { id: 207, cat: "PILOT \u2014 LOCKED", text: "PURPLE SOCKS + SILVER BIRKENSTOCKS: First downward camera reveal. Not a costume choice. Chat loses it." },
+  { id: 27, cat: "PILOT \u2014 LOCKED", text: "BICYCLE CRASH: Ranting in bike lane. Dutch woman hits him. She's right. Chat explodes. Viewers: 65\u2192120\u2192200\u2192400\u2192800." },
+  { id: 29, cat: "PILOT \u2014 LOCKED", text: "KEES TIKKIE: \u20AC3.50. IRL friend in chat. \"Sorry bro, I didn't know your stream was successful like that.\" Rant about Tikkies as philosophically violent." },
+  { id: 204, cat: "PILOT \u2014 LOCKED", text: "\u20AC3.50 DONATION \u2014 \"KEES CAN SUCK A DICK\": Stranger validates his grievance with cash. Gateway drug. Menace era starts here." },
+  { id: 303, cat: "PILOT \u2014 LOCKED", text: "AH BONUS CARD WALLET: One \u20AC10 note but dozens of blue AH Bonus cards. Flicks them at camera one by one." },
+  { id: 311, cat: "PILOT \u2014 LOCKED", text: "CONVERSION BY MATH: International chat runs the math on his lost revenue. Sheer volume triggers 180-degree pivot." },
+  { id: 209, cat: "PILOT \u2014 LOCKED", text: "LIVE CONVERSION: \"I could have monetised all of it. I ACTUALLY love money. I was a fool.\" Most monetisable content = sincere vulnerable moment." },
+  { id: 33, cat: "PILOT \u2014 LOCKED", text: "SPENDING SPREE: Commercial gallery. Every purchase justified from inside the afternoon's logic. Money \u2192 zero." },
+  { id: 215, cat: "PILOT \u2014 LOCKED", text: "SPENDING = DAM, NOT DRIP: One payment triggers, then everything queued fires at MACHINE PACE. Dutch financial infrastructure as comedy engine." },
+  { id: 214, cat: "PILOT \u2014 LOCKED", text: "BILLS AS PUSH NOTIFICATIONS: Chat sees them before Edoardo does. Information asymmetry as comedy." },
+  { id: 30, cat: "PILOT \u2014 LOCKED", text: "LENOR SCENE: Edge of Red Light District. Empty window. TE HUUR. Chat overlay STAYS VISIBLE BUT EMPTY. Ren'Py Visual Novel. Simlish." },
+  { id: 31, cat: "PILOT \u2014 LOCKED", text: "LENOR KEY LINE: \"Love died. My body cannot produce love anymore. It produces fantasy. I am a factory of fantasies, and you are the consumer.\"" },
+  { id: 32, cat: "PILOT \u2014 LOCKED", text: "POST-LENOR SILENCE: Standing in front of empty window. Doesn't say anything. Chat doesn't push. For once, nobody types." },
+  { id: 211, cat: "PILOT \u2014 LOCKED", text: "\"EAT THE BOOK\" THREAD: \u20AC1 dare on tram. Escalates. He SNAPS and eats a page. Dry mouth from weed. 20,000 viewers. Mother watching." },
+  { id: 201, cat: "PILOT \u2014 LOCKED", text: "HYDRATION/PEE LOOP: Gets high \u2192 cottonmouth \u2192 drinks \u2192 needs to pee \u2192 finds spot. Four stops total. Bodily engine." },
+  { id: 212, cat: "PILOT \u2014 LOCKED", text: "STREAM SNIPER AT CANAL PEE: \"hello, police.\" Turns mid-pee. Pisses on sniper's shoes. MUTUAL paralysis." },
+  { id: 310, cat: "PILOT \u2014 LOCKED", text: "THE SWARM: Viewers scale to thousands. Intimacy dies. Chat = hostile wall of emotes. Village became stadium." },
+  { id: 400, cat: "PILOT \u2014 LOCKED", text: "CUSTOM RANT DEATH: \"do the ING rant Edo\" buried under \"FREDDY FREDDY FREDDY\" in 0.5s. Mechanical murder of intimacy." },
+  { id: 407, cat: "PILOT \u2014 LOCKED", text: "THE SWARM ARRIVES: 30 bodies from alleys. Rush EMERGENCY EXIT, film him passing. Ghost immediately." },
+  { id: 408, cat: "PILOT \u2014 LOCKED", text: "CONTENT LOCUSTS: \"Thanks for the content bro!\" \"Decline again for my TikTok?\" Extract clip, leave husk." },
+  { id: 39, cat: "PILOT \u2014 LOCKED", text: "RTS ENDING: Metro gate declined. Commands chat as RTS units. Genre shift: RPG \u2192 Visual Novel \u2192 RTS. One last delusion.", pinned: true },
+  { id: 40, cat: "PILOT \u2014 LOCKED", text: "RTS pt2: Almost works. ONE Dutch metro lady appears. Does NOTHING. Just EXISTS. Mob evaporates." },
+  { id: 41, cat: "PILOT \u2014 LOCKED", text: "RTS pt3: Alone. Fined. ALL ON STREAM. Highest viewer count = worst moment." },
+  { id: 216, cat: "PILOT \u2014 LOCKED", text: "METRO GATE WIDE SHOT: TV camera takes over. Freddy sweater, cones, eaten book, bags, shouting at dead phone for mother. First time the SHOW sees him from outside." },
+  { id: 415, cat: "PILOT \u2014 LOCKED", text: "THE ENDING: \"Mamma\" at dead phone. 30 LED screens. Heron. Gate beeps. Woman from Ep2 swipes through. Camera follows her." },
+  { id: 42, cat: "PILOT \u2014 LOCKED", text: "BATON PASS: Woman sidestepping chaos. ACTIVE CHOICE to not get involved. Most Dutch possible. Camera follows her." },
+  { id: 410, cat: "PILOT \u2014 LOCKED", text: "MONEY INDICATOR THREAD: Chat sees it tick down. Regulars scream \"STOP\" \u2192 buried under \"DO IT.\"" },
+  { id: 411, cat: "PILOT \u2014 LOCKED", text: "MOM TTS OPERA: \u20AC1 donations trigger her in TTS. Guanyin voice. Strangers paying \u20AC1 to deploy his mother." },
+  { id: 36, cat: "PILOT \u2014 LOCKED", text: "THE HERON: Grey heron appears peripherally throughout. Edoardo never notices. Not explained." },
+  { id: 54, cat: "PILOT \u2014 PROPOSED", text: "COFFEESHOP SPONSORSHIP PITCH: Printed pitch deck. PIE CHART: YOUR BRAND (big) / MY INTEGRITY (tiny). Owner: \"Nee.\"" },
+  { id: 55, cat: "PILOT \u2014 PROPOSED", text: "RPG UI AS COMEDY: Status effects \u2014 \"BUZZED\" debuff, \"IMPULSE BUY\" ability. UI treats terrible decisions with neutral game logic." },
+  { id: 402, cat: "PILOT \u2014 PROPOSED", text: "GIMBAL UPRISING: Auto-tracks pigeon, cloud, painting of Jesus. \"I am the content.\" Gimbal: *vibrates*." },
+  { id: 403, cat: "PILOT \u2014 PROPOSED", text: "HOTEL STEALTH PEE: Narrates like heist game. Opens wrong door. Chat: \"other left.\"" },
+  { id: 404, cat: "PILOT \u2014 PROPOSED", text: "\u20AC100 SPONSORSHIP READ: Amsterdam Dungeon ad while high, cones on fingers, next to torture poster. Messes up promo code." },
+  { id: 405, cat: "PILOT \u2014 PROPOSED", text: "DIGID HELL: Sets up monetization on sidewalk. Needs forms, BSN, DigiD. Screenshares BSN accidentally." },
+  { id: 50, cat: "PILOT \u2014 PROPOSED", text: "GERARD THE HERON: 65,000 followers. Sponsored. The heron is 1000 Edoardos." },
+  { id: 51, cat: "PILOT \u2014 PROPOSED", text: "COLLAB PITCH TO HERON: \"Integrated content. Revenue split.\" Dead serious. To a bird." },
+  { id: 218, cat: "PILOT \u2014 PROPOSED", text: "STREAM SNIPER SWARM FOR RTS: Snipers who tracked him all day become his army at the metro gate." },
+  { id: 100, cat: "EP2 \u2014 HUSTLES", text: "Ensemble: three hustles. Mo & Sven furniture via public transport. Metro-gate woman: illegal restaurant. Tuk tuk neighbour." },
+  { id: 110, cat: "EP3 \u2014 ELARA", text: "Late 20s, polished professional. Secretly homeless. Lives in 24/7 gym. Apartment viewing \u2192 battle royale." },
+  { id: 120, cat: "EP4 \u2014 BUY NOW DIE LATER", text: "Klarna, Afterpay \u2014 the day ALL deferred payments come due simultaneously. Series' open wound." },
+  { id: 130, cat: "EP5 \u2014 SASHA", text: "Cam girl, cinephile. Cam room like Tarkovsky set. 60+ serialised videos. ONLY character who walks away free." },
+  { id: 140, cat: "PRODUCTION", text: "Missing: ACTUAL PILOT SCRIPT PAGES." },
+  { id: 144, cat: "PRODUCTION", text: "Series bible (8-15 pages) = most important missing document." },
+  { id: 146, cat: "PRODUCTION", text: "Lakaaysha: \"we're nowhere near pitching.\" Need bible, treatment, lookbook, script pages." },
+];
+
+function App() {
+  const [ideas, setIdeas] = useState(() => {
+    try { const s = localStorage.getItem(STORAGE_KEY); if (s) { const d = JSON.parse(s); if (Array.isArray(d.ideas)) return d.ideas; } } catch {}
+    return INITIAL_IDEAS;
+  });
+  const [filter, setFilter] = useState("ALL");
+  const [search, setSearch] = useState("");
+  const [expanded, setExpanded] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [newText, setNewText] = useState("");
+  const [newCat, setNewCat] = useState("PILOT \u2014 PROPOSED");
+  const [toast, setToast] = useState(null);
+  const [deleted, setDeleted] = useState(null);
+  const listRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Autosave (only ideas — positions managed by desktop)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const existing = localStorage.getItem(STORAGE_KEY);
+        if (existing) {
+          const d = JSON.parse(existing);
+          d.ideas = ideas;
+          d.savedAt = new Date().toISOString();
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
+        } else {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify({ ideas, positions: {}, zIndices: {}, zoom: 0.52, pan: { x: 0, y: 0 }, savedAt: new Date().toISOString() }));
+        }
+      } catch {}
+    }, 400);
+    return () => clearTimeout(t);
+  }, [ideas]);
+
+  const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); }, []);
+
+  const sl = search.toLowerCase();
+  const filtered = useMemo(() => {
+    return ideas.filter(i => {
+      if (filter !== "ALL" && i.cat !== filter) return false;
+      if (search && !i.text.toLowerCase().includes(sl) && !i.cat.toLowerCase().includes(sl)) return false;
+      return true;
+    });
+  }, [ideas, filter, search, sl]);
+
+  const counts = useMemo(() => {
+    const c = {};
+    for (const i of ideas) c[i.cat] = (c[i.cat] || 0) + 1;
+    return c;
+  }, [ideas]);
+
+  const addNote = useCallback(() => {
+    if (!newText.trim()) return;
+    const id = Date.now();
+    setIdeas(p => [...p, { id, cat: newCat, text: newText.trim(), pinned: false }]);
+    setNewText("");
+    setAdding(false);
+    showToast("Note added \u2713");
+  }, [newText, newCat, showToast]);
+
+  const deleteNote = useCallback((id) => {
+    const note = ideas.find(i => i.id === id);
+    setDeleted(note);
+    setIdeas(p => p.filter(i => i.id !== id));
+    setExpanded(null);
+    showToast("Deleted \u2014 tap UNDO");
+    setTimeout(() => setDeleted(null), 5000);
+  }, [ideas, showToast]);
+
+  const undoDelete = useCallback(() => {
+    if (deleted) { setIdeas(p => [...p, deleted]); setDeleted(null); showToast("Restored \u2713"); }
+  }, [deleted, showToast]);
+
+  useEffect(() => { if (adding && inputRef.current) setTimeout(() => inputRef.current.focus(), 100); }, [adding]);
+
+  const pinnedCount = useMemo(() => filtered.filter(i => i.pinned).length, [filtered]);
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#0a0a2e" }}>
+      {/* HEADER */}
+      <div style={{ padding: "12px 16px 8px", background: "linear-gradient(180deg,#0a0a2e,rgba(10,10,46,0.95))", borderBottom: "1px solid rgba(0,255,238,0.15)", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ color: "#0ff5ee", fontWeight: 700, fontSize: 15, letterSpacing: "0.1em" }}>\u{1F480} DCB MOBILE</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setAdding(!adding)} style={{ background: adding ? "#ff6ec7" : "rgba(0,255,238,0.15)", border: "none", borderRadius: 20, color: adding ? "#1a0020" : "#0ff5ee", padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{adding ? "\u2715" : "+ ADD"}</button>
+          </div>
+        </div>
+        {/* SEARCH */}
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="\u{1F50D} Search notes..." style={{ width: "100%", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(0,255,238,0.15)", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 10 }} />
+        {/* CATEGORY TABS */}
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 6, WebkitOverflowScrolling: "touch" }}>
+          <button onClick={() => setFilter("ALL")} style={{ flexShrink: 0, background: filter === "ALL" ? "rgba(0,255,238,0.2)" : "rgba(255,255,255,0.05)", border: filter === "ALL" ? "1px solid #0ff5ee" : "1px solid rgba(255,255,255,0.1)", borderRadius: 16, color: filter === "ALL" ? "#0ff5ee" : "rgba(255,255,255,0.5)", padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>ALL {ideas.length}</button>
+          {CAT_KEYS.map(cat => {
+            const cnt = counts[cat] || 0;
+            if (!cnt) return null;
+            const active = filter === cat;
+            const co = COLORS[CATEGORIES[cat].color];
+            return <button key={cat} onClick={() => setFilter(active ? "ALL" : cat)} style={{ flexShrink: 0, background: active ? co.bg + "33" : "rgba(255,255,255,0.05)", border: active ? `1px solid ${co.bg}` : "1px solid rgba(255,255,255,0.1)", borderRadius: 16, color: active ? co.bg : "rgba(255,255,255,0.5)", padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{CATEGORIES[cat].icon} {SHORT_NAMES[cat]} {cnt}</button>;
+          })}
+        </div>
+      </div>
+
+      {/* ADD PANEL */}
+      {adding && (
+        <div style={{ padding: "12px 16px", background: "rgba(255,110,199,0.08)", borderBottom: "1px solid rgba(255,110,199,0.2)", flexShrink: 0 }}>
+          <select value={newCat} onChange={e => setNewCat(e.target.value)} style={{ width: "100%", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,110,199,0.2)", borderRadius: 8, color: "#fff", padding: "8px 12px", fontSize: 13, marginBottom: 8, outline: "none" }}>
+            {CAT_KEYS.map(c => <option key={c} value={c}>{CATEGORIES[c].icon} {c}</option>)}
+          </select>
+          <textarea ref={inputRef} value={newText} onChange={e => setNewText(e.target.value)} placeholder="Fire away..." rows={3} style={{ width: "100%", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,110,199,0.2)", borderRadius: 8, color: "#fff", padding: "10px 12px", fontSize: 14, outline: "none", resize: "none", lineHeight: 1.5 }} />
+          <button onClick={addNote} disabled={!newText.trim()} style={{ width: "100%", marginTop: 8, background: newText.trim() ? "#ff6ec7" : "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, color: newText.trim() ? "#1a0020" : "rgba(255,255,255,0.3)", padding: "12px", fontSize: 14, fontWeight: 700, cursor: newText.trim() ? "pointer" : "default" }}>ADD NOTE</button>
+        </div>
+      )}
+
+      {/* COUNT BAR */}
+      <div style={{ padding: "6px 16px", fontSize: 11, color: "rgba(255,255,255,0.35)", borderBottom: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
+        {filtered.length} notes{search ? ` matching "${search}"` : ""}{pinnedCount ? ` \u00B7 ${pinnedCount} pinned` : ""}
+      </div>
+
+      {/* NOTE LIST */}
+      <div ref={listRef} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "8px 12px 80px" }}>
+        {filtered.map(idea => {
+          const cat = CATEGORIES[idea.cat] || { color: "yellow", icon: "\u{1F4DD}" };
+          const co = COLORS[cat.color];
+          const isOpen = expanded === idea.id;
+          return (
+            <div key={idea.id} onClick={() => setExpanded(isOpen ? null : idea.id)} style={{
+              background: co.bg, color: co.text, borderLeft: `4px solid ${co.border}`,
+              borderRadius: 4, padding: isOpen ? "14px 14px 10px" : "10px 14px",
+              marginBottom: 8, cursor: "pointer", transition: "all 0.15s ease",
+              boxShadow: isOpen ? `0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px ${co.border}` : "0 1px 4px rgba(0,0,0,0.15)",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", opacity: 0.6 }}>{cat.icon} {SHORT_NAMES[idea.cat] || idea.cat}</span>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {idea.pinned && <span style={{ fontSize: 11 }}>\u{1F4CC}</span>}
+                  <span style={{ fontSize: 10, opacity: 0.4 }}>{isOpen ? "\u25B2" : "\u25BC"}</span>
+                </div>
+              </div>
+              <div style={{
+                fontSize: 13, lineHeight: 1.5,
+                overflow: isOpen ? "visible" : "hidden",
+                display: isOpen ? "block" : "-webkit-box",
+                WebkitLineClamp: isOpen ? "unset" : 2,
+                WebkitBoxOrient: "vertical",
+              }}>{idea.text}</div>
+              {isOpen && (
+                <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                  <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(idea.text).then(() => showToast("Copied!")); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", opacity: 0.7 }}>\u{1F4CB} COPY</button>
+                  <button onClick={e => { e.stopPropagation(); deleteNote(idea.id); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: "#ff4444", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>\u{1F5D1} DELETE</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,0.25)", fontSize: 14 }}>No notes found</div>
+        )}
+      </div>
+
+      {/* TOAST */}
+      {(toast || deleted) && (
+        <div style={{ position: "fixed", bottom: 20, left: 16, right: 16, background: "rgba(10,10,46,0.95)", border: "1px solid rgba(0,255,238,0.3)", borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", zIndex: 9999, backdropFilter: "blur(10px)" }}>
+          <span style={{ fontSize: 13, color: "#fff" }}>{toast}</span>
+          {deleted && <button onClick={undoDelete} style={{ background: "none", border: "1px solid #0ff5ee", borderRadius: 4, color: "#0ff5ee", padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>UNDO</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
