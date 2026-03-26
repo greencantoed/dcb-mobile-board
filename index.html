@@ -220,12 +220,16 @@ function App() {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [editText, setEditText] = useState("");
+  const [editCat, setEditCat] = useState("");
   const [newText, setNewText] = useState("");
   const [newCat, setNewCat] = useState("PILOT — PROPOSED");
   const [toast, setToast] = useState(null);
   const [deleted, setDeleted] = useState(null);
   const listRef = useRef(null);
   const inputRef = useRef(null);
+  const editRef = useRef(null);
 
   // Autosave (only ideas — positions managed by desktop)
   useEffect(() => {
@@ -283,6 +287,38 @@ function App() {
   const undoDelete = useCallback(() => {
     if (deleted) { setIdeas(p => [...p, deleted]); setDeleted(null); showToast("Restored ✓"); }
   }, [deleted, showToast]);
+
+  const startEdit = useCallback((idea) => {
+    setEditing(idea.id);
+    setEditText(idea.text);
+    setEditCat(idea.cat);
+    setTimeout(() => editRef.current && editRef.current.focus(), 100);
+  }, []);
+
+  const saveEdit = useCallback(() => {
+    if (!editing) return;
+    setIdeas(p => p.map(i => i.id === editing ? { ...i, text: editText.trim() || i.text, cat: editCat } : i));
+    setEditing(null);
+    setExpanded(null);
+    showToast("Saved ✓");
+  }, [editing, editText, editCat, showToast]);
+
+  const togglePin = useCallback((id) => {
+    setIdeas(p => p.map(i => i.id === id ? { ...i, pinned: !i.pinned } : i));
+    showToast("Pin toggled");
+  }, [showToast]);
+
+  const moveNote = useCallback((id, dir) => {
+    setIdeas(p => {
+      const idx = p.findIndex(i => i.id === id);
+      if (idx < 0) return p;
+      const target = dir === "up" ? idx - 1 : idx + 1;
+      if (target < 0 || target >= p.length) return p;
+      const arr = [...p];
+      [arr[idx], arr[target]] = [arr[target], arr[idx]];
+      return arr;
+    });
+  }, []);
 
   useEffect(() => { if (adding && inputRef.current) setTimeout(() => inputRef.current.focus(), 100); }, [adding]);
 
@@ -349,17 +385,36 @@ function App() {
                   <span style={{ fontSize: 10, opacity: 0.4 }}>{isOpen ? "▲" : "▼"}</span>
                 </div>
               </div>
-              <div style={{
-                fontSize: 13, lineHeight: 1.5,
-                overflow: isOpen ? "visible" : "hidden",
-                display: isOpen ? "block" : "-webkit-box",
-                WebkitLineClamp: isOpen ? "unset" : 2,
-                WebkitBoxOrient: "vertical",
-              }}>{idea.text}</div>
-              {isOpen && (
-                <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(idea.text).then(() => showToast("Copied!")); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", opacity: 0.7 }}>📋 COPY</button>
-                  <button onClick={e => { e.stopPropagation(); deleteNote(idea.id); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: "#ff4444", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🗑 DELETE</button>
+              {isOpen && editing === idea.id ? (
+                <div onClick={e => e.stopPropagation()} style={{ marginTop: 4 }}>
+                  <select value={editCat} onChange={e => setEditCat(e.target.value)} style={{ width: "100%", background: "rgba(0,0,0,0.1)", border: "1px solid rgba(0,0,0,0.2)", borderRadius: 6, color: co.text, padding: "8px 10px", fontSize: 12, marginBottom: 6, outline: "none" }}>
+                    {CAT_KEYS.map(c => <option key={c} value={c}>{CATEGORIES[c].icon} {c}</option>)}
+                  </select>
+                  <textarea ref={editRef} value={editText} onChange={e => setEditText(e.target.value)} rows={5} style={{ width: "100%", background: "rgba(0,0,0,0.08)", border: "1px solid rgba(0,0,0,0.2)", borderRadius: 6, color: co.text, padding: "10px 12px", fontSize: 13, lineHeight: 1.5, outline: "none", resize: "vertical" }} />
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button onClick={saveEdit} style={{ flex: 1, background: "rgba(0,0,0,0.2)", border: "none", borderRadius: 6, color: co.text, padding: "10px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ SAVE</button>
+                    <button onClick={() => setEditing(null)} style={{ flex: 1, background: "rgba(0,0,0,0.08)", border: "none", borderRadius: 6, color: co.text, padding: "10px", fontSize: 13, cursor: "pointer", opacity: 0.7 }}>CANCEL</button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  fontSize: 13, lineHeight: 1.5,
+                  overflow: isOpen ? "visible" : "hidden",
+                  display: isOpen ? "block" : "-webkit-box",
+                  WebkitLineClamp: isOpen ? "unset" : 2,
+                  WebkitBoxOrient: "vertical",
+                }}>{idea.text}</div>
+              )}
+              {isOpen && editing !== idea.id && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button onClick={e => { e.stopPropagation(); startEdit(idea); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "7px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>✏️ EDIT</button>
+                    <button onClick={e => { e.stopPropagation(); togglePin(idea.id); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "7px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{idea.pinned ? "📌 UNPIN" : "📌 PIN"}</button>
+                    <button onClick={e => { e.stopPropagation(); moveNote(idea.id, "up"); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "7px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>⬆️</button>
+                    <button onClick={e => { e.stopPropagation(); moveNote(idea.id, "down"); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "7px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>⬇️</button>
+                    <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(idea.text).then(() => showToast("Copied!")); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "7px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", opacity: 0.7 }}>📋 COPY</button>
+                    <button onClick={e => { e.stopPropagation(); deleteNote(idea.id); }} style={{ background: "rgba(255,50,50,0.15)", border: "none", borderRadius: 4, color: "#cc0000", padding: "7px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🗑 DELETE</button>
+                  </div>
                 </div>
               )}
             </div>
