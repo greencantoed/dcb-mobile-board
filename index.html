@@ -33,20 +33,20 @@ const COLORS = {
 };
 
 const CATEGORIES = {
-  "SERIES": { color: "cyan", icon: "\u{1F4FA}" },
-  "PILOT \u2014 LOCKED": { color: "magenta", icon: "\u{1F512}" },
-  "PILOT \u2014 PROPOSED": { color: "violet", icon: "\u{1F4A1}" },
-  "PILOT \u2014 SHOT DOWN": { color: "coral", icon: "\u{1F480}" },
-  "EP2 \u2014 HUSTLES": { color: "yellow", icon: "\u{1F6CB}\uFE0F" },
-  "EP3 \u2014 ELARA": { color: "mint", icon: "\u{1F3CB}\uFE0F" },
-  "EP4 \u2014 BUY NOW DIE LATER": { color: "lavender", icon: "\u{1F4B3}" },
-  "EP5 \u2014 SASHA": { color: "peach", icon: "\u{1F3AC}" },
-  "PRODUCTION": { color: "cyan", icon: "\u{1F4CB}" },
-  "COMEDY RULES": { color: "magenta", icon: "\u{1F3AD}" },
-  "NEW": { color: "yellow", icon: "\u2728" },
+  "SERIES": { color: "cyan", icon: "📺" },
+  "PILOT — LOCKED": { color: "magenta", icon: "🔒" },
+  "PILOT — PROPOSED": { color: "violet", icon: "💡" },
+  "PILOT — SHOT DOWN": { color: "coral", icon: "💀" },
+  "EP2 — HUSTLES": { color: "yellow", icon: "🛋️" },
+  "EP3 — ELARA": { color: "mint", icon: "🏋️" },
+  "EP4 — BUY NOW DIE LATER": { color: "lavender", icon: "💳" },
+  "EP5 — SASHA": { color: "peach", icon: "🎬" },
+  "PRODUCTION": { color: "cyan", icon: "📋" },
+  "COMEDY RULES": { color: "magenta", icon: "🎭" },
+  "NEW": { color: "yellow", icon: "✨" },
 };
 const CAT_KEYS = Object.keys(CATEGORIES);
-const SHORT_NAMES = { "SERIES":"SERIES", "PILOT \u2014 LOCKED":"LOCKED", "PILOT \u2014 PROPOSED":"PROPOSED", "PILOT \u2014 SHOT DOWN":"SHOT DOWN", "EP2 \u2014 HUSTLES":"EP2", "EP3 \u2014 ELARA":"EP3", "EP4 \u2014 BUY NOW DIE LATER":"EP4", "EP5 \u2014 SASHA":"EP5", "PRODUCTION":"PROD", "COMEDY RULES":"COMEDY", "NEW":"NEW" };
+const SHORT_NAMES = { "SERIES":"SERIES", "PILOT — LOCKED":"LOCKED", "PILOT — PROPOSED":"PROPOSED", "PILOT — SHOT DOWN":"SHOT DOWN", "EP2 — HUSTLES":"EP2", "EP3 — ELARA":"EP3", "EP4 — BUY NOW DIE LATER":"EP4", "EP5 — SASHA":"EP5", "PRODUCTION":"PROD", "COMEDY RULES":"COMEDY", "NEW":"NEW" };
 
 const STORAGE_KEY = "dcb_whiteboard_state";
 
@@ -221,7 +221,7 @@ function App() {
   const [expanded, setExpanded] = useState(null);
   const [adding, setAdding] = useState(false);
   const [newText, setNewText] = useState("");
-  const [newCat, setNewCat] = useState("PILOT \u2014 PROPOSED");
+  const [newCat, setNewCat] = useState("PILOT — PROPOSED");
   const [toast, setToast] = useState(null);
   const [deleted, setDeleted] = useState(null);
   const listRef = useRef(null);
@@ -268,7 +268,7 @@ function App() {
     setIdeas(p => [...p, { id, cat: newCat, text: newText.trim(), pinned: false }]);
     setNewText("");
     setAdding(false);
-    showToast("Note added \u2713");
+    showToast("Note added ✓");
   }, [newText, newCat, showToast]);
 
   const deleteNote = useCallback((id) => {
@@ -276,12 +276,12 @@ function App() {
     setDeleted(note);
     setIdeas(p => p.filter(i => i.id !== id));
     setExpanded(null);
-    showToast("Deleted \u2014 tap UNDO");
+    showToast("Deleted — tap UNDO");
     setTimeout(() => setDeleted(null), 5000);
   }, [ideas, showToast]);
 
   const undoDelete = useCallback(() => {
-    if (deleted) { setIdeas(p => [...p, deleted]); setDeleted(null); showToast("Restored \u2713"); }
+    if (deleted) { setIdeas(p => [...p, deleted]); setDeleted(null); showToast("Restored ✓"); }
   }, [deleted, showToast]);
 
   useEffect(() => { if (adding && inputRef.current) setTimeout(() => inputRef.current.focus(), 100); }, [adding]);
@@ -293,13 +293,13 @@ function App() {
       {/* HEADER */}
       <div style={{ padding: "12px 16px 8px", background: "linear-gradient(180deg,#0a0a2e,rgba(10,10,46,0.95))", borderBottom: "1px solid rgba(0,255,238,0.15)", flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <div style={{ color: "#0ff5ee", fontWeight: 700, fontSize: 15, letterSpacing: "0.1em" }}>\u{1F480} DCB MOBILE</div>
+          <div style={{ color: "#0ff5ee", fontWeight: 700, fontSize: 15, letterSpacing: "0.1em" }}>💀 DCB MOBILE</div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setAdding(!adding)} style={{ background: adding ? "#ff6ec7" : "rgba(0,255,238,0.15)", border: "none", borderRadius: 20, color: adding ? "#1a0020" : "#0ff5ee", padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{adding ? "\u2715" : "+ ADD"}</button>
+            <button onClick={() => setAdding(!adding)} style={{ background: adding ? "#ff6ec7" : "rgba(0,255,238,0.15)", border: "none", borderRadius: 20, color: adding ? "#1a0020" : "#0ff5ee", padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{adding ? "✕" : "+ ADD"}</button>
           </div>
         </div>
         {/* SEARCH */}
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="\u{1F50D} Search notes..." style={{ width: "100%", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(0,255,238,0.15)", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 10 }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search notes..." style={{ width: "100%", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(0,255,238,0.15)", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 10 }} />
         {/* CATEGORY TABS */}
         <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 6, WebkitOverflowScrolling: "touch" }}>
           <button onClick={() => setFilter("ALL")} style={{ flexShrink: 0, background: filter === "ALL" ? "rgba(0,255,238,0.2)" : "rgba(255,255,255,0.05)", border: filter === "ALL" ? "1px solid #0ff5ee" : "1px solid rgba(255,255,255,0.1)", borderRadius: 16, color: filter === "ALL" ? "#0ff5ee" : "rgba(255,255,255,0.5)", padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>ALL {ideas.length}</button>
@@ -326,13 +326,13 @@ function App() {
 
       {/* COUNT BAR */}
       <div style={{ padding: "6px 16px", fontSize: 11, color: "rgba(255,255,255,0.35)", borderBottom: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
-        {filtered.length} notes{search ? ` matching "${search}"` : ""}{pinnedCount ? ` \u00B7 ${pinnedCount} pinned` : ""}
+        {filtered.length} notes{search ? ` matching "${search}"` : ""}{pinnedCount ? ` · ${pinnedCount} pinned` : ""}
       </div>
 
       {/* NOTE LIST */}
       <div ref={listRef} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "8px 12px 80px" }}>
         {filtered.map(idea => {
-          const cat = CATEGORIES[idea.cat] || { color: "yellow", icon: "\u{1F4DD}" };
+          const cat = CATEGORIES[idea.cat] || { color: "yellow", icon: "📝" };
           const co = COLORS[cat.color];
           const isOpen = expanded === idea.id;
           return (
@@ -345,8 +345,8 @@ function App() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                 <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", opacity: 0.6 }}>{cat.icon} {SHORT_NAMES[idea.cat] || idea.cat}</span>
                 <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  {idea.pinned && <span style={{ fontSize: 11 }}>\u{1F4CC}</span>}
-                  <span style={{ fontSize: 10, opacity: 0.4 }}>{isOpen ? "\u25B2" : "\u25BC"}</span>
+                  {idea.pinned && <span style={{ fontSize: 11 }}>📌</span>}
+                  <span style={{ fontSize: 10, opacity: 0.4 }}>{isOpen ? "▲" : "▼"}</span>
                 </div>
               </div>
               <div style={{
@@ -358,8 +358,8 @@ function App() {
               }}>{idea.text}</div>
               {isOpen && (
                 <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end", gap: 8 }}>
-                  <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(idea.text).then(() => showToast("Copied!")); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", opacity: 0.7 }}>\u{1F4CB} COPY</button>
-                  <button onClick={e => { e.stopPropagation(); deleteNote(idea.id); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: "#ff4444", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>\u{1F5D1} DELETE</button>
+                  <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(idea.text).then(() => showToast("Copied!")); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", opacity: 0.7 }}>📋 COPY</button>
+                  <button onClick={e => { e.stopPropagation(); deleteNote(idea.id); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: "#ff4444", padding: "6px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🗑 DELETE</button>
                 </div>
               )}
             </div>
