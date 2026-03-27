@@ -6,10 +6,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0a0a2e">
-<title>DCB Mobile</title>
+<title>DCB Mobile v2</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{height:100%;overflow:hidden;background:#0a0a2e;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#fff}
+html,body{height:100%;overflow:hidden;background:#0a0a2e;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:#fff}
 #root{height:100%;display:flex;flex-direction:column}
 </style>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -19,425 +19,790 @@ html,body{height:100%;overflow:hidden;background:#0a0a2e;font-family:'Segoe UI',
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useRef, useCallback, useEffect, useMemo } = React;
+const { useState, useRef, useCallback, useEffect, useMemo, useReducer } = React;
 
+// ─── COLOR PALETTE ───
 const COLORS = {
-  cyan: { bg: "#0ff5ee", text: "#0a0a2e", border: "#00c4c0" },
-  magenta: { bg: "#ff6ec7", text: "#1a0020", border: "#cc58a0" },
-  violet: { bg: "#b967ff", text: "#1a0030", border: "#9050cc" },
-  yellow: { bg: "#ffe66d", text: "#2a2000", border: "#ccb850" },
-  mint: { bg: "#7afdd6", text: "#002a20", border: "#5cc4a8" },
-  coral: { bg: "#ff8a80", text: "#2a0a08", border: "#cc6e66" },
+  cyan:     { bg: "#0ff5ee", text: "#0a0a2e", border: "#00c4c0" },
+  magenta:  { bg: "#ff6ec7", text: "#1a0020", border: "#cc58a0" },
+  yellow:   { bg: "#ffe66d", text: "#2a2000", border: "#ccb850" },
+  mint:     { bg: "#7afdd6", text: "#002a20", border: "#5cc4a8" },
   lavender: { bg: "#d4c4fb", text: "#1a1030", border: "#a89acc" },
-  peach: { bg: "#ffcba4", text: "#2a1808", border: "#cc9e80" },
+  peach:    { bg: "#ffcba4", text: "#2a1808", border: "#cc9e80" },
+  coral:    { bg: "#ff8a80", text: "#2a0a08", border: "#cc6e66" },
 };
 
+// ─── CATEGORIES (8) ───
 const CATEGORIES = {
-  "SERIES": { color: "cyan", icon: "📺" },
-  "PILOT — LOCKED": { color: "magenta", icon: "🔒" },
-  "PILOT — PROPOSED": { color: "violet", icon: "💡" },
-  "PILOT — SHOT DOWN": { color: "coral", icon: "💀" },
-  "EP2 — HUSTLES": { color: "yellow", icon: "🛋️" },
-  "EP3 — ELARA": { color: "mint", icon: "🏋️" },
-  "EP4 — BUY NOW DIE LATER": { color: "lavender", icon: "💳" },
-  "EP5 — SASHA": { color: "peach", icon: "🎬" },
-  "PRODUCTION": { color: "cyan", icon: "📋" },
-  "COMEDY RULES": { color: "magenta", icon: "🎭" },
-  "NEW": { color: "yellow", icon: "✨" },
+  "SERIES":       { color: "cyan",     icon: "\u{1F4FA}" },
+  "PILOT":        { color: "magenta",  icon: "\u{1F3AC}" },
+  "EP2":          { color: "yellow",   icon: "\u{1F6CB}\uFE0F" },
+  "EP3":          { color: "mint",     icon: "\u{1F3CB}\uFE0F" },
+  "EP4":          { color: "lavender", icon: "\u{1F4B3}" },
+  "EP5":          { color: "peach",    icon: "\u{1F3AC}" },
+  "PRODUCTION":   { color: "cyan",     icon: "\u{1F4CB}" },
+  "COMEDY RULES": { color: "coral",    icon: "\u{1F3AD}" },
 };
 const CAT_KEYS = Object.keys(CATEGORIES);
-const SHORT_NAMES = { "SERIES":"SERIES", "PILOT — LOCKED":"LOCKED", "PILOT — PROPOSED":"PROPOSED", "PILOT — SHOT DOWN":"SHOT DOWN", "EP2 — HUSTLES":"EP2", "EP3 — ELARA":"EP3", "EP4 — BUY NOW DIE LATER":"EP4", "EP5 — SASHA":"EP5", "PRODUCTION":"PROD", "COMEDY RULES":"COMEDY", "NEW":"NEW" };
 
+// ─── STATUSES ───
+const STATUSES = {
+  "LOCKED":     { icon: "\u{1F512}", label: "LOCKED" },
+  "PROPOSED":   { icon: "\u{1F4A1}", label: "PROPOSED" },
+  "SHOT DOWN":  { icon: "\u{1F480}", label: "SHOT DOWN" },
+  "NEW":        { icon: "\u2728",    label: "NEW" },
+};
+const STATUS_KEYS = Object.keys(STATUSES);
+const STATUS_CYCLE = ["NEW", "PROPOSED", "LOCKED", "SHOT DOWN"];
+
+// ─── MIGRATION ───
+const SPECIAL_CAT_MAP = {
+  "EP2 \u2014 HUSTLES": "EP2",
+  "EP3 \u2014 ELARA": "EP3",
+  "EP4 \u2014 BUY NOW DIE LATER": "EP4",
+  "EP5 \u2014 SASHA": "EP5",
+};
+const FLAT_CATS = { "SERIES": "LOCKED", "PRODUCTION": "LOCKED", "COMEDY RULES": "LOCKED", "NEW": null };
+
+let _lastUsedCategory = "PILOT";
+
+function migrateNote(note) {
+  if (note.category) return note;
+  const now = new Date().toISOString();
+  const out = { ...note, created: note.created || now, modified: note.modified || now };
+  const cat = note.cat || "";
+
+  // Special episode mappings
+  if (SPECIAL_CAT_MAP[cat]) {
+    out.category = SPECIAL_CAT_MAP[cat];
+    out.status = "LOCKED";
+    _lastUsedCategory = out.category;
+    return out;
+  }
+
+  // Flat categories without dash
+  if (cat in FLAT_CATS) {
+    if (cat === "NEW") {
+      out.category = _lastUsedCategory;
+      out.status = "NEW";
+    } else {
+      out.category = cat;
+      out.status = FLAT_CATS[cat];
+    }
+    _lastUsedCategory = out.category;
+    return out;
+  }
+
+  // Split on " — "
+  const dashIdx = cat.indexOf(" \u2014 ");
+  if (dashIdx !== -1) {
+    out.category = cat.substring(0, dashIdx);
+    out.status = cat.substring(dashIdx + 3);
+    _lastUsedCategory = out.category;
+    return out;
+  }
+
+  // Fallback
+  out.category = cat || "PILOT";
+  out.status = "LOCKED";
+  _lastUsedCategory = out.category;
+  return out;
+}
+
+// ─── STORAGE ───
 const STORAGE_KEY = "dcb_whiteboard_state";
+const COLLAPSE_KEY = "dcb_collapse_state";
 
-// Same INITIAL_IDEAS as desktop (abbreviated — loads from localStorage in practice)
+// ─── INITIAL IDEAS (all 157 notes, old cat format — migrated at runtime) ───
 const INITIAL_IDEAS = [
-  { id: 1, cat: "SERIES", text: "5-episode hybrid anthology, Amsterdam. Working poor met een MacBook. Educated, financially precarious. Baton-pass structure — last frame of each ep introduces next protagonist.", pinned: true },
-  { id: 6, cat: "SERIES", text: "Ep1 (Edoardo) and Ep5 (Sasha) function as bookends. He can't monetise himself. She is monetised against her will. He gets fined at the gate. She walks away free." },
+  { id: 1, cat: "SERIES", text: "5-episode hybrid anthology, Amsterdam. Working poor met een MacBook. Educated, financially precarious. Baton-pass structure \u2014 last frame of each ep introduces next protagonist.", pinned: true },
+  { id: 6, cat: "SERIES", text: "Ep1 (Edoardo) and Ep5 (Sasha) function as bookends. He can\u2019t monetise himself. She is monetised against her will. He gets fined at the gate. She walks away free." },
   { id: 2, cat: "SERIES", text: "Visual language degrades across series. Ep1 crisp. By Ep5 compression artefacts, glitches, image rotting. Vaporwave becomes weirdcore.", pinned: true },
-  { id: 3, cat: "SERIES", text: "Three visual registers: Desktop Cinema (screen as narrative space), Videogame Sequences (RPG/visual novel — different per episode), Vaporwave Aesthetic (cyan/magenta/Memphis Design)." },
+  { id: 3, cat: "SERIES", text: "Three visual registers: Desktop Cinema (screen as narrative space), Videogame Sequences (RPG/visual novel \u2014 different per episode), Vaporwave Aesthetic (cyan/magenta/Memphis Design)." },
   { id: 10, cat: "SERIES", text: "Simlish audio for all visual novel/RPG sequences. Content through text boxes. You have to READ." },
   { id: 7, cat: "SERIES", text: "Comps: Atlanta (surreal played straight), Ramy (cultural specificity without explanation), Chungking Express (consumer products as emotional objects), Mr. Robot (desktop cinema)." },
-  { id: 9, cat: "SERIES", text: "Tone: comedy register is mo lei tau — dead serious commitment to absurd premises, no winking. Combined with Italian humiliation economics and manzai boke/tsukkomi." },
+  { id: 9, cat: "SERIES", text: "Tone: comedy register is mo lei tau \u2014 dead serious commitment to absurd premises, no winking. Combined with Italian humiliation economics and manzai boke/tsukkomi." },
   { id: 4, cat: "SERIES", text: "\"Describe the room, not the wallpaper.\" Specific character behaviour under pressure, not abstract statements about late capitalism." },
   { id: 5, cat: "SERIES", text: "\"If you want politics go to the Hague or go vote, I tell stories.\" No framing through political/theoretical lenses." },
   { id: 8, cat: "SERIES", text: "Audience: Zillennials (1993-1998) and older Gen Z. People who check their bank balance with one eye closed." },
-  { id: 11, cat: "SERIES", text: "Origin: 2021 experimental short \"Reflections on Dutch Capitalism\" — 7min33s, all roles solo, Willem de Kooning Academy. Led to Fabrica and UdK Berlin." },
+  { id: 11, cat: "SERIES", text: "Origin: 2021 experimental short \"Reflections on Dutch Capitalism\" \u2014 7min33s, all roles solo, Willem de Kooning Academy. Led to Fabrica and UdK Berlin." },
   { id: 150, cat: "COMEDY RULES", text: "Mo lei tau: total commitment to absurd premises. No winking. Gap between sincerity and recognition IS the comedy." },
   { id: 300, cat: "COMEDY RULES", text: "MO LEI TAU AS ENGINE: The comedy operates on hyper-specific absurdism and the mundane accumulation of chaos. It is not dark, dramatic, or melancholic. It is a picaresque stream where the surrealism is accepted as reality." },
   { id: 152, cat: "COMEDY RULES", text: "Three registers: protagonist = mo lei tau (commitment), camera = Italian (detached), chat = manzai (correction)." },
   { id: 151, cat: "COMEDY RULES", text: "Chat as distributed tsukkomi: COMPLETES the joke. Writing must leave structural gap where tsukkomi belongs." },
   { id: 153, cat: "COMEDY RULES", text: "Dignity preserved through earnestness. Ganbare tradition. Laugh is with, not at." },
-  { id: 154, cat: "COMEDY RULES", text: "Pirandello bifocal: avvertimento (laughing at) → sentimento (laughing with through compassion)." },
+  { id: 154, cat: "COMEDY RULES", text: "Pirandello bifocal: avvertimento (laughing at) \u2192 sentimento (laughing with through compassion)." },
   { id: 158, cat: "COMEDY RULES", text: "Bella figura: dignity PERFORMED while crumbling. They know. They keep performing." },
-  { id: 156, cat: "COMEDY RULES", text: "Yoshida: \"When a human being is earnest about something, there's something humorous about that.\"" },
-  { id: 155, cat: "COMEDY RULES", text: "Summarising a joke KILLS IT. Commit. Don't observe." },
+  { id: 156, cat: "COMEDY RULES", text: "Yoshida: \"When a human being is earnest about something, there\u2019s something humorous about that.\"" },
+  { id: 155, cat: "COMEDY RULES", text: "Summarising a joke KILLS IT. Commit. Don\u2019t observe." },
   { id: 157, cat: "COMEDY RULES", text: "Comedy and pathos in same frame. NOT sequenced. Simultaneity." },
-  { id: 219, cat: "COMEDY RULES", text: "SPENDING MECHANIC PRINCIPLE: A slope, not a repeating gag. The dam-break structure means the FIRST payment arriving is the trigger — then queued automated payments fire in machine-gun sequence. Comedy from the speed differential between human-paced decisions and system-paced consequences. Not \"oh no another bill\" four times — one cascade that feels like a system failure." },
-  { id: 20, cat: "PILOT — LOCKED", text: "Logline: Political livestreamer with 65 viewers picks up package in centre, gets high, goes viral by accident, spends money he doesn't have, ends stuck at metro gate with declined card.", pinned: true },
-  { id: 21, cat: "PILOT — LOCKED", text: "Edoardo: Italian expat, late 20s. Aspirationally Žižek. Read Cassirer, Benjamin, Adorno — can't land the tone. 65-70 regulars. Private Discord ~15 active. Stream NOT monetised (yet)." },
-  { id: 200, cat: "PILOT — LOCKED", text: "BESPOKE RANTS AS FREE SERVICE: Edoardo performs personalised anti-corporate rants on request for his chat. A bespoke service he has NEVER monetised. He does it for love and intellectual pride. The fact that it's free is not a gag — it's the foundation of the entire spending crisis. He gives away the one thing people would actually pay for." },
-  { id: 37, cat: "PILOT — LOCKED", text: "VIEWER COUNT AS DRAMATIC ENGINE: High counts → delusional overcommitment. Low counts → evidence of those commitments left in his hands (bags, pitch deck, Bonus Card)." },
-  { id: 38, cat: "PILOT — LOCKED", text: "Episode reads as if Edoardo edited it himself. When the visual language breaks down at the metro gate — the show takes over from his version of himself." },
-  { id: 307, cat: "PILOT — LOCKED", text: "THE VILLAGE (65 VIEWERS): The baseline stream is a bucolic, chill environment. Regulars use him for background noise. He operates as a \"Jukebox of Rage\" — taking custom requests from viewers to philosophically destroy the specific companies they are currently working for." },
-  { id: 22, cat: "PILOT — LOCKED", text: "Opens streaming to regulars, showing his own 2021 video. \"I was ahead of my time.\" Chat: \"bro we watched this a year ago.\" Doorbell — missed delivery. Rants about delivery person, apologises to working class." },
-  { id: 308, cat: "PILOT — LOCKED", text: "LORE-KEEPERS AS STOCK HOLDERS: Two users treat his stream like an archive. Track absurd continuity details of outfits and past streams. They are \"streamer hunters\" who hold his stock early; when he finally goes viral, they don't try to save him — they just enjoy the beautiful explosion of his dignity." },
-  { id: 28, cat: "PILOT — LOCKED", text: "TWO CHAT REGULARS: Unauthorized archivists of his life. Correct him about his OWN history. \"four years bro, you always forget the first winter.\" More reliable narrators of him than he is." },
-  { id: 23, cat: "PILOT — LOCKED", text: "Chat pushes him outside: \"Bro just go get it yourself and stream it.\" They've seen him return high and loose before. Slight devilish intent — they want the funny version. He hears \"we want more of you.\"" },
-  { id: 210, cat: "PILOT — LOCKED", text: "€85 THEORY BOOK AS DEAD WEIGHT: He picks up the package — the thing that started the whole IRL stream. It's an €85 theory book he ordered that morning. \"Very important.\" From this point on he carries it as literal dead weight through every remaining scene. Bags in one hand, book in the other. The intellectual purchase that caused the journey becomes physical burden for the rest of the episode." },
-  { id: 24, cat: "PILOT — LOCKED", text: "TRAM SCENE: Boards ranting, exits mid-sentence, forgets to check out. OV-chipkaart silently deducts. He doesn't notice. We do. First invisible money loss." },
-  { id: 301, cat: "PILOT — LOCKED", text: "THE WALKING ODYSSEY: There is no plot-device delay at the pickup point. The weather is nice, the viewer count is slightly up, and the chat says \"show us some dam bro.\" Edoardo CHOOSES to walk. The tram kept him distant and complainy; walking physically exposes him to the ghosts of his past and immediate temptations." },
-  { id: 302, cat: "PILOT — LOCKED", text: "THE SMILING GHOST: Edoardo's job history is a graveyard of places he lasted a maximum of 14 days (night receptionist, cafes). He was never dramatically fired in a blaze of Marxist glory. He simply called in sick, made excuses, smiled politely, and eventually ghosted them." },
-  { id: 25, cat: "PILOT — LOCKED", text: "COFFEESHOPS: 5-6 stops. Each a 10-15 second RPG transition (FFT/Fire Emblem grid). Select coffeeshop → MOVE → sprite walks → cut to live action walking out with joint mid-sentence. Money indicator ticking." },
-  { id: 304, cat: "PILOT — LOCKED", text: "FIDGET PROP (JOINT CONES): Nervous habit of playing with empty plastic pre-roll cone tubes. Buys a 3-for-20 tourist deal and accumulates the empty tubes throughout the stream. Physical prop that tracks the passage of time and consumption." },
-  { id: 305, cat: "PILOT — LOCKED", text: "FREDDY KRUEGER SURRENDER: Wears a horizontally striped sweater he believes channels Syd Barrett. Chat immediately calls it Freddy Krueger. Pissed at first. By the third joint, surrenders to the bit — slides three empty plastic cones onto his fingers like claws and plays the character to the chat." },
-  { id: 26, cat: "PILOT — LOCKED", text: "PAOLO STORY: Smartshop in a former church. Paolo (formerly Guido). Counted candy stores: 1, 2, 3, 4, 5, 6 — decided Western civilisation was finished. Now in Albanian monastery. Revelation 18:11. Edoardo: \"He is so coherent.\"" },
-  { id: 202, cat: "PILOT — LOCKED", text: "MOTHER JOINS CHAT (~150 VIEWERS): She appears under her FULL LEGAL NAME. Not a username. Her actual name. She treats the stream chat like a messaging app — types like she's sending a private WhatsApp. \"Edoardo did you eat today?\" The chat can see everything. She has no concept of public vs private digital space." },
-  { id: 309, cat: "PILOT — LOCKED", text: "MAMMA CUMITINI: His mother joins the chat under her REAL NAME before the massive flood. Treats Twitch like WhatsApp. The Lore-Keepers use Google Translate to secretly interview her about Edoardo's past (locking himself out in pajamas for a pizza). She stays in the chat until the very end." },
-  { id: 203, cat: "PILOT — LOCKED", text: "LORE KEEPERS INTERROGATE MOTHER: The two archivist regulars immediately start questioning her via auto-translation about past incidents Edoardo has described differently on stream. They are fact-checking him THROUGH HIS OWN MOTHER. She is a primary source who doesn't know she's being cross-referenced. Edoardo is being peer-reviewed live by his parent and his audience simultaneously." },
-  { id: 401, cat: "PILOT — LOCKED", text: "LORE KEEPERS VS MOM — TRANSLATION ERRORS: Google Translate interrogation about \"pyjama-pizza-Debord incident.\" Translation errors create secondary myths in the chat (\"clean the canal Edo\"). A parallel show happening in chat Edoardo can't see." },
-  { id: 205, cat: "PILOT — LOCKED", text: "UNIVERSITY TOILET STOP: He goes to the university for a free toilet (budget logic). But the high + being back in the building where he studied loosens him. The location does the work — it unlocks personal anecdotes he wouldn't tell in other settings. The university is emotionally loaded space and the weed removes the filter." },
-  { id: 206, cat: "PILOT — LOCKED", text: "PERSONAL ANECDOTES AT UNIVERSITY: Clubs he ran, showing up to class in women's clothes, canal pissing rituals with friends. This is Edoardo at his most genuinely entertaining — not performing analysis, just telling stories from his actual life. The chat responds to THIS version of him much more than the Žižek version. He doesn't notice the difference." },
-  { id: 207, cat: "PILOT — LOCKED", text: "PURPLE SOCKS + SILVER BIRKENSTOCKS: First downward camera reveal. The phone tilts down and we see what he's actually wearing on his feet. Purple socks. Silver Birkenstocks. This is not a costume choice — this is just what he put on. The chat sees it. He doesn't know it's visible. The outfit has been there the entire stream but nobody saw until now." },
-  { id: 306, cat: "PILOT — LOCKED", text: "SOCKS AND SANDALS REVEAL: At the university, telling stories about showing up to class in women's clothes and urinating in canals. Points camera down to prove he is currently wearing purple socks and silver Birkenstocks. Chat loses its mind. The reveal is incidental — he doesn't understand why it's funny." },
-  { id: 27, cat: "PILOT — LOCKED", text: "BICYCLE CRASH: Ranting in bike lane. Dutch woman hits him. Both furious. She's right. Doesn't drop phone. Chat explodes. Someone clips it. Viewers start growing: 65→120→200→400→800." },
-  { id: 29, cat: "PILOT — LOCKED", text: "KEES TIKKIE: €3.50. IRL friend appears in chat. \"Sorry bro, I didn't know your stream was successful like that.\" Edoardo loses it. Rant about Tikkies as philosophically violent." },
-  { id: 204, cat: "PILOT — LOCKED", text: "€3.50 DONATION — \"KEES CAN SUCK A DICK\": A stranger donates exactly €3.50 — the EXACT amount of Kees's Tikkie — with the message \"kees can suck a dick.\" This is Edoardo's first experience of strangers PAYING MONEY to take his side. Someone he's never met validated his grievance with cash. This is the gateway drug. The menace era starts here. He's tasted it now." },
-  { id: 303, cat: "PILOT — LOCKED", text: "ALBERT HEIJN BONUS CARD WALLET: Rant that discounts are an illusion created by artificial markups, cards insultingly accessible. Opens wallet to reveal one €10 note but dozens of blue AH Bonus cards. Flicks them at camera one by one: \"Every time I forget it at home, I get another and another and another.\"" },
-  { id: 311, cat: "PILOT — LOCKED", text: "CONVERSION BY MATH: Anti-capitalist in college because it fit his milieu. While reminiscing about unmonetized campus clubs (with hundreds of followers), the international chat runs the math on his lost revenue. The sheer volume of global viewers pointing out missed profits triggers a 180-degree pivot." },
-  { id: 208, cat: "PILOT — LOCKED", text: "INTERNATIONAL CHAT OUTNUMBERS HIS FRAMEWORK: As viewers grow into the thousands, the chat starts running the math on everything Edoardo describes — his rent, his spending, his non-monetised stream, his free rants. The collective intelligence of thousands of strangers with calculators outnumbers his theoretical framework by sheer volume. They see what he can't: the numbers don't work and never did." },
-  { id: 312, cat: "PILOT — LOCKED", text: "THE REVELATION (EXACT WORDING): He does not realize he should have been a startup founder. He simply realizes: \"I could have monetized it all. I actually love money. I was a fool.\"" },
-  { id: 209, cat: "PILOT — LOCKED", text: "LIVE CONVERSION: The chat's math triggers a real-time epiphany. He could have monetised all of it. He ACTUALLY loves money. He was a fool. This is not a gag — it's a genuine shift in self-perception happening on camera. The irony is that this sincere vulnerable moment IS the most monetisable content he's ever produced, and he still doesn't see that layer." },
-  { id: 33, cat: "PILOT — LOCKED", text: "SPENDING SPREE: Commercial gallery. Every purchase justified from inside the afternoon's logic. Every purchase is content. Bags accumulate. Money → zero." },
-  { id: 215, cat: "PILOT — LOCKED", text: "SPENDING MECHANIC = DAM, NOT DRIP: The spending is NOT a recurring gag. It's a slope. Money arrives (donations, the gateway drug), ONE payment triggers, then everything that was queued fires at MACHINE PACE simultaneously. A dam breaking, not a dripping tap. The comedy is the speed differential: Edoardo's spending is human-paced (one purchase at a time, each justified), but the automated billing system catches up all at once. Dutch financial infrastructure as comedy engine." },
-  { id: 214, cat: "PILOT — LOCKED", text: "BILLS AS PUSH NOTIFICATIONS CHAT READS FIRST: Zorgverzekering. Belastingdienst. Huur. The bills arrive as push notifications on his phone while he's streaming. The chat sees them pop up on screen BEFORE Edoardo reads them. The audience knows he's broke before he does. Information asymmetry as comedy — thousands of people watching a man's financial life collapse in real time, reading his mail over his shoulder." },
-  { id: 34, cat: "PILOT — LOCKED", text: "BILLS HIT: Zorgverzekering. Belastingdienst. Huur. All arrive while he's on live carrying bags." },
-  { id: 30, cat: "PILOT — LOCKED", text: "LENOR SCENE: Edge of Red Light District. Empty window. TE HUUR. \"Don't you remember the video, chat? It's that girl.\" Chat overlay STAYS VISIBLE BUT EMPTY — the silence is a visual fact. Ren'Py Visual Novel. Simlish. Text boxes. Dialogue from 2021 film." },
-  { id: 31, cat: "PILOT — LOCKED", text: "LENOR KEY LINE: \"Love died. My body cannot produce love anymore. It produces fantasy. I am a factory of fantasies, and you are the consumer.\" Intimacy route locked. Only Transaction route. Window = dark glass. TE HUUR." },
-  { id: 406, cat: "PILOT — LOCKED", text: "LENOR + HERON SIMULTANEITY: Visual Novel plays. Simlish. Locked routes. Heron visible in background of the window scene. Two shows running simultaneously. Chat split between \"how is this possible\" and \"damn I need to call my mom.\"" },
-  { id: 32, cat: "PILOT — LOCKED", text: "POST-LENOR SILENCE: Back to live footage. Standing in front of empty window. Doesn't say anything. Keeps walking. Chat doesn't push. For once, nobody types." },
-  { id: 211, cat: "PILOT — LOCKED", text: "\"EAT THE BOOK\" THREAD: Seeded early by a €1 donation on the tram: someone dares him to eat a page. The thread recurs across the episode as an escalating dare — more donations pile on, the dollar amount climbing. It pays off when he SNAPS and actually eats a page. Dry mouth from the weed. 20,000 viewers. His mother watching in chat. The dare economy works because each individual donation is tiny but the accumulated pressure is enormous." },
-  { id: 313, cat: "PILOT — LOCKED", text: "EATING THE BIBLIOGRAPHY: Early — €1 donation says \"eat the book then.\" Laughs it off. As stream peaks and Swarm takes over, TTS donations escalate the demand. Hyped on Sativa and clout, he snaps: \"Fuck you chat, you thought I wasn't gonna do it? Don't fucking try me.\" Rips out a page and eats it. Impossibly dry. His mother watches in the chat." },
-  { id: 201, cat: "PILOT — LOCKED", text: "COTTONMOUTH / HYDRATION / PEE LOOP: A PHYSICAL CLOCK running across the episode. Gets high → cottonmouth → drinks constantly → needs to pee → finds spot → drinks again. Four stops total. The loop is a bodily engine that keeps forcing him into new locations and new trouble. Each pee stop is a scene transition driven by his bladder, not by plot." },
-  { id: 217, cat: "PILOT — LOCKED", text: "COTTONMOUTH → PEE → SNIPER CAUSAL CHAIN: The hydration loop is not just a running gag — it's a causal engine. Gets high → cottonmouth → drinks → needs to pee → finds canal → sniper finds HIM at the canal because he's stationary and exposed. The bodily function creates the vulnerability that the sniper exploits. Every physical consequence chains into the next." },
-  { id: 212, cat: "PILOT — LOCKED", text: "STREAM SNIPER AT CANAL PEE: During the fourth and final canal pee (hydration loop payoff), a stream sniper who physically tracked him says \"hello, police\" from off-camera. Edoardo turns — still urinating — and nearly flashes his own stream while simultaneously pissing on the sniper's shoes. Neither party knows what to do. The comedy is the MUTUAL paralysis: the sniper got what he wanted (proximity to the streamer) and immediately regrets it." },
-  { id: 213, cat: "PILOT — LOCKED", text: "THREE-WAY COLLISION AT BRIDGE PEE: The gag operates across all three registers simultaneously. EDOARDO: turning mid-pee, caught between exposure and dignity. PHYSICAL WORLD: urine on shoes, a stranger who thought this would be funny now has wet feet. CHAT: they see the near-flash, they see the sniper, they caused this by making the stream popular enough to attract snipers. The chat is watching the consequences of its own influence materialise in physical space." },
-  { id: 310, cat: "PILOT — LOCKED", text: "THE SWARM (DEGENERACY MULTIPLIER): As viewers scale to thousands, the intimacy dies. Edoardo can no longer read custom requests. Chat becomes a hostile, fast-moving wall of emotes, forcing him to \"go Hollywood\" and act like a circus animal to keep their attention. The village became a stadium." },
-  { id: 400, cat: "PILOT — LOCKED", text: "CUSTOM RANT DEATH: User types \"do the ING rant Edo\" → buried under \"FREDDY FREDDY FREDDY\" in 0.5 seconds. Tries twice. Buried twice. Mechanical murder of intimacy. The village dies not with a bang but with a scroll." },
-  { id: 407, cat: "PILOT — LOCKED", text: "THE SWARM ARRIVES: 30 bodies emerge from alleys. Circle the gate. He raises hand like a general. They rush the EMERGENCY EXIT, film him passing. Digital becomes physical. They use him as cover, steal his viewers, ghost immediately." },
-  { id: 408, cat: "PILOT — LOCKED", text: "CONTENT LOCUSTS: \"Thanks for the content bro!\" \"Decline again for my TikTok?\" → disperse when he goes offline. Extract clip, leave husk. Proves IRL viewers are worse than chat because they can smell you." },
-  { id: 39, cat: "PILOT — LOCKED", text: "RTS ENDING: Metro gate declined. Edoardo tries to COMMAND his chat viewers like RTS units — summon crowd, storm the gates. Genre shift: RPG → Visual Novel → RTS. One last delusion: he thinks he can direct reality like a game.", pinned: true },
-  { id: 40, cat: "PILOT — LOCKED", text: "RTS ENDING pt2: For one second it ALMOST works — crowd energy builds, looks like they'll force through. Then: ONE tall serious Dutch metro lady appears. Does NOTHING. Just EXISTS with authority. Entire mob evaporates. Smash back through gates in retreat." },
-  { id: 41, cat: "PILOT — LOCKED", text: "RTS ENDING pt3: Edoardo alone. No ticket. Getting fined. ALL ON STREAM. Highest viewer count = worst moment. Fine gives him reason to call mum for money." },
-  { id: 216, cat: "PILOT — LOCKED", text: "METRO GATE WIDE SHOT — THE SHOW TAKES OVER: When the stream dies, the TV camera takes over for the first time. Wide shot. A man in a Freddy Krueger sweater with empty joint cones on his fingers, holding a partially eaten theory book, bags in both hands, shouting at a dead phone for his mother. This is the first moment the SHOW sees Edoardo from the outside — not through his stream, not through his self-image, but from across the station. The image the world actually sees." },
-  { id: 314, cat: "PILOT — LOCKED", text: "METRO GATE FINAL STATE: Over-encumbered with bags, the heavy book, and the plastic claws. The UI and the chat strip away. Left shouting at his phone, begging his chat and his mother for an Uber, before the episode cuts to the Ep2 protagonist swiping through the gate." },
-  { id: 409, cat: "PILOT — LOCKED", text: "FINAL IMAGE: Surrounded by 30 phones recording in 4K. Shouts \"Mamma\" at dead device. LED circle light. Heron watches from the platform edge. Zoo animal, not streamer. The distance collapsed into suffocation." },
-  { id: 415, cat: "PILOT — LOCKED", text: "THE ENDING (LOCKED): \"Mamma\" at dead phone. 30 LED screens. Heron. Gate beeps. Woman from Ep2 swipes through. Camera follows her. The joke: he asked 20,000 for an Uber. Got 30 filming him fail. Shouts to mom in a chat she's lost in. The show leaves his broadcast, sees him from outside for the first time: just a guy with bags, cones, swollen book, shouting at glass." },
-  { id: 42, cat: "PILOT — LOCKED", text: "BATON PASS: Woman sidestepping active chaos — not passing a still figure, making ACTIVE CHOICE to not get involved. Most Dutch possible. Camera follows her instead." },
-  { id: 410, cat: "PILOT — LOCKED", text: "MONEY INDICATOR THREAD: Chat sees it tick down. Edoardo doesn't. Regulars scream \"STOP\" → buried under \"DO IT.\" The number is always visible to everyone except the person it belongs to." },
-  { id: 411, cat: "PILOT — LOCKED", text: "MOM TTS OPERA: €1 donations trigger her messages in TTS. Guanyin voice. Divine maternal intervention interrupting the menace era at the worst moments. She doesn't know she's being weaponised by strangers paying €1 to deploy her." },
-  { id: 412, cat: "PILOT — LOCKED", text: "NINE-DAY JOBS THREAD: Hotel is the only real scene. The rest are chat callouts he denies. Lore-Keepers list the places: \"wasn't that the cafe on Kinkerstraat?\" \"no that was the one on Overtoom, he lasted THREE days there.\" Pattern, not wound." },
-  { id: 413, cat: "PILOT — LOCKED", text: "JOINT CONES AS INVENTORY: Accumulate in pockets → move to fingers. Inventory management as character development. By the climax he has three on each hand. The Freddy Krueger bit is not a costume choice — it's the natural endpoint of consumption." },
-  { id: 414, cat: "PILOT — LOCKED", text: "SWEATER ARGUMENT THREAD: Syd Barrett → Freddy Krueger → Cone Krueger. Three stages of physical surrender to the chat's naming power. He loses the argument about his own clothes." },
-  { id: 315, cat: "PILOT — LOCKED", text: "THE NAMELESS HERON: An unacknowledged continuity nod for the Lore-Keepers. Same bird Edoardo previously fed half a raw haring to on a past stream. Appears peripherally, completely indifferent to his suffering. No names, no rivalries. Just a bird that eats better than he does." },
-  { id: 36, cat: "PILOT — LOCKED", text: "THE HERON: Grey heron appears peripherally throughout — canal edge, bike path, metro platform. Edoardo never notices. Real footage. Not explained." },
-  { id: 54, cat: "PILOT — PROPOSED", text: "COFFEESHOP SPONSORSHIP PITCH: Printed one-page pitch deck. PIE CHART: YOUR BRAND (big) / MY INTEGRITY (tiny). Owner: \"How many come?\" Ed: \"All sixty-five. Potentially.\" Owner: \"Nee.\"" },
-  { id: 55, cat: "PILOT — PROPOSED", text: "RPG UI AS COMEDY TRACK: Status effects — \"BUZZED\" debuff, \"NOSTALGIC\", \"IMPULSE BUY\" ability unlocking. UI treats terrible decisions with neutral game logic." },
-  { id: 56, cat: "PILOT — PROPOSED", text: "RPG TRANSITIONS GET LAZIER: First coffeeshop = full grid. By fifth, barely rendering. Game engine tired of the same bad decision." },
-  { id: 67, cat: "PILOT — PROPOSED", text: "FFT GRID AS 2-SECOND MENTAL GLITCH: Not a skeleton. A tumor. Appears when bureaucracy stops loading." },
-  { id: 58, cat: "PILOT — PROPOSED", text: "OV-CHIPKAART AS CHEKHOV'S GUN: Balance visible for half a second during RPG transition. Metro decline not a surprise to anyone except Edoardo." },
-  { id: 52, cat: "PILOT — PROPOSED", text: "OLD CHAT GUYS SET UP HERON: One types \"oh look it's Gerard\" on canal BEFORE stall scene. Edoardo scrolls past. Audience gets info before protagonist. Setup 30 min before punchline." },
-  { id: 53, cat: "PILOT — PROPOSED", text: "OLD CHAT GUYS DISAGREE: One thinks Edoardo peaked 2 months ago. Other thinks peak coming. They argue IN CHAT while he has a crisis. Sports commentators for a sport only they watch." },
-  { id: 57, cat: "PILOT — PROPOSED", text: "SOMEONE IN CHAT DOING THE MATH: One viewer posting running total. No commentary. Just numbers. Nobody acknowledges it." },
-  { id: 62, cat: "PILOT — PROPOSED", text: "STREAM DELAY AS PARALLEL REALITY: Chat responds to 30 seconds ago. He answers their response but they've moved on. Permanently out of sync with past self." },
-  { id: 68, cat: "PILOT — PROPOSED", text: "CHAT OVERLAY VISIBLE BUT EMPTY during Lenor — empty chat box next to Ren'Py text boxes. You SEE the nobody." },
-  { id: 50, cat: "PILOT — PROPOSED", text: "GERARD THE HERON: A bigger content creator than Edoardo. Sponsored, capped, 65,000 followers. TikTok. Edoardo fed him a haring months ago. The heron is 1000 Edoardos." },
-  { id: 51, cat: "PILOT — PROPOSED", text: "COLLAB PITCH TO HERON: At 400 viewers Edoardo announces \"the collab.\" Approaches Gerard with EXACT same energy as coffeeshop pitch. \"Integrated content. Revenue split.\" Dead serious. To a bird." },
-  { id: 64, cat: "PILOT — PROPOSED", text: "METRO GATE AS COLLAB PITCH: At 58 viewers, streaming terminology on the turnstile. \"Partnership.\" \"Shadowban.\" At 400 = ambitious. At 58 = talking to furniture." },
-  { id: 59, cat: "PILOT — PROPOSED", text: "STREAM SNIPER: Appears behind him. Chat: \"BEHIND YOU.\" He never turns. Sniper gives up. Chat: \"you just lost your only real fan.\"" },
-  { id: 60, cat: "PILOT — PROPOSED", text: "FIRST DONATION: €2 on a bridge. Reads mundane message like scripture. Regulars FURIOUS: \"WE'VE BEEN HERE FOR A YEAR.\" Labour dispute on a bridge while high." },
-  { id: 61, cat: "PILOT — PROPOSED", text: "PHONE BATTERY AS CHARACTER: Talks to % like a sick relative. Can't close Spotify — city goes silent without it. Reopens. Battery drops 2%. Chat: \"he chose music over us.\"" },
-  { id: 63, cat: "PILOT — PROPOSED", text: "TIKKIE AS RECURRING WEAPON: Multiple throughout — tiny debts surfacing on worst day. Each technically fair." },
-  { id: 65, cat: "PILOT — PROPOSED", text: "GALLERY PURCHASES MAKE PERFECT SENSE: Airtight justification from inside being high + viral. Money indicator = only truth." },
-  { id: 66, cat: "PILOT — PROPOSED", text: "BONUS CARD RANT: About DISAPPOINTMENT. Card is FREE. \"A VIP area where the rope is imaginary.\"" },
-  { id: 402, cat: "PILOT — PROPOSED", text: "GIMBAL UPRISING: Auto-tracks pigeon, cloud, painting of Jesus. Edoardo: \"I am the content.\" Gimbal: *vibrates*. Tool achieves sentience, rejects user. AI labor consciousness as physical comedy." },
-  { id: 403, cat: "PILOT — PROPOSED", text: "HOTEL STEALTH PEE: Narrates like heist game. \"I worked here for nine days.\" Opens wrong door (someone inside). Chat directs him: \"other left.\" Memory vs reality — he wasn't there long enough to matter, but acts like he built the place." },
-  { id: 404, cat: "PILOT — PROPOSED", text: "THE €100 SPONSORSHIP READ: Amsterdam Dungeon ad read while high, cones on fingers, standing next to a torture poster. Messes up the promo code. Monetization attempt immediately corrupted by his own state." },
-  { id: 405, cat: "PILOT — PROPOSED", text: "DIGID HELL: Tries to set up stream monetization on the sidewalk mid-stream. Needs forms, BSN, DigiD verification. Screenshares his BSN accidentally. Feral capitalist meets Dutch bureaucracy. Immediate doxxing as punchline." },
-  { id: 218, cat: "PILOT — PROPOSED", text: "STREAM SNIPER SWARM FOR RTS ENDING: Multiple stream snipers converge for the metro gate sequence — the same people who tracked him through the city now form part of the crowd he tries to command as RTS units. The snipers who followed him all day become his army. Their parasocial attachment to him is the resource he tries to weaponise." },
-  { id: 35, cat: "PILOT — SHOT DOWN", text: "OLD SILENT ENDING: Visual language stripped, no overlays, no chat, no grid. Train arrives/departs. He doesn't move. — REJECTED: \"loser-like silence\", the show's voice is noise not silence. European festival energy ≠ this show." },
-  { id: 80, cat: "PILOT — SHOT DOWN", text: "Claude's JRPG battle overlay for Tikkies (\"Enemy MARK appears!\") — too heavy-handed." },
-  { id: 81, cat: "PILOT — SHOT DOWN", text: "Wrapping jokes with closing observations / tidy summarising lines — kills the bit every time." },
-  { id: 82, cat: "PILOT — SHOT DOWN", text: "Inventing rant topics for Edoardo — creative violation. Only E. writes Edoardo's voice." },
-  { id: 83, cat: "PILOT — SHOT DOWN", text: "\"Smart guy who can't monetise intelligence\" framing — NO. Critical theory has no practical application BY DESIGN." },
-  { id: 84, cat: "PILOT — SHOT DOWN", text: "Edoardo smokes weed before every stream — WRONG. Stoner side comes out when stressed." },
-  { id: 85, cat: "PILOT — SHOT DOWN", text: "Earlier version: Edoardo as video-essayist who doesn't stream." },
-  { id: 86, cat: "PILOT — SHOT DOWN", text: "Editorializing about what things MEAN in treatment language." },
-  { id: 87, cat: "PILOT — SHOT DOWN", text: "Gerard bit ending with ribbon/bow (\"His legacy is bird discovery\") — E: \"i'll never talk to you again.\"" },
-  { id: 88, cat: "PILOT — SHOT DOWN", text: "Spending sequence as fast montage with music — \"would aestheticize the spending.\"" },
-  { id: 89, cat: "PILOT — SHOT DOWN", text: "Earlier Ep2: Mila & Daan → superseded by Mo & Sven." },
-  { id: 90, cat: "PILOT — SHOT DOWN", text: "Earlier Ep3: Sophie → superseded by Elara." },
-  { id: 91, cat: "PILOT — SHOT DOWN", text: "Earlier Ep4: Youssef delivery rider → superseded by buy-now-pay-later." },
-  { id: 92, cat: "PILOT — SHOT DOWN", text: "Earlier Ep5: Nina → superseded by Sasha." },
-  { id: 100, cat: "EP2 — HUSTLES", text: "Ensemble: three hustles, same neighbourhood. Mo & Sven furniture via public transport. Metro-gate woman runs illegal restaurant. Neighbour has tuk tuk. Worlds overlap unknowingly." },
-  { id: 101, cat: "EP2 — HUSTLES", text: "Mo & Sven: Memphis sofa across Amsterdam on public transport. Treat it as serious logistics. Gap = operational seriousness vs absurdity." },
-  { id: 102, cat: "EP2 — HUSTLES", text: "TUK TUK LOOPHOLES: Kostendeling (BlaBlaCar defence), Ervaring (\"cultural tour\" not transport), Vrijwillige Bijdrage (donation jar)." },
-  { id: 103, cat: "EP2 — HUSTLES", text: "Tuk tuk character: depreciation includes emotional damage from haggling, fuel adjusted for headwinds. Spreadsheet that'd make Belastingdienst weep." },
-  { id: 104, cat: "EP2 — HUSTLES", text: "Needs mapping: how do three hustles intersect spatially?" },
-  { id: 110, cat: "EP3 — ELARA", text: "Late 20s, polished professional. Secretly homeless. Lives in 24/7 gym. Maintains appearances flawlessly." },
-  { id: 111, cat: "EP3 — ELARA", text: "Mass apartment viewing → elimination competition → battle royale." },
-  { id: 112, cat: "EP3 — ELARA", text: "Gap: looks perfect / has no address. Most unstable person in room must appear most grounded." },
-  { id: 113, cat: "EP3 — ELARA", text: "Health bars over candidates during small talk. Chamber piece — tightest, most constrained episode." },
-  { id: 114, cat: "EP3 — ELARA", text: "NOT passive — actively dismantles competition. To win \"stability\" = most ruthlessly strategic." },
-  { id: 120, cat: "EP4 — BUY NOW DIE LATER", text: "Series' open wound. Multiple iterations rejected. Most resistant to development." },
-  { id: 121, cat: "EP4 — BUY NOW DIE LATER", text: "Klarna, Afterpay — the day ALL deferred payments come due simultaneously." },
-  { id: 122, cat: "EP4 — BUY NOW DIE LATER", text: "Gap: has everything / owns nothing / about to have less than nothing." },
-  { id: 123, cat: "EP4 — BUY NOW DIE LATER", text: "Should be female for 3-3 gender split." },
-  { id: 124, cat: "EP4 — BUY NOW DIE LATER", text: "Needs: what's she DOING that day that makes timing unbearable?" },
-  { id: 130, cat: "EP5 — SASHA", text: "Cam girl, cinephile. Cam room like Tarkovsky set. 60+ videos of serialised narrative. Subscribers follow the plot." },
-  { id: 131, cat: "EP5 — SASHA", text: "Dutch director subscribed 2+ years. Basic tier €2.99. SUMMER50 discount. Never messaged. Just watched." },
-  { id: 132, cat: "EP5 — SASHA", text: "His film = her blocking, her lines, her arc. His grants vs her €42.71. He used a coupon." },
-  { id: 133, cat: "EP5 — SASHA", text: "\"I SHOULD HAVE COPYRIGHTED A DAMN FETISH.\" System doesn't recognise her as author." },
-  { id: 134, cat: "EP5 — SASHA", text: "References: Tampopo (ASMR), Daisies (food crush), Jeanne Dielman (€2 potato peeling), Eyes Wide Shut (voyeur-only), Beau Travail, Petra von Kant, Rear Window, Air Doll, Maya Deren, Tarantino feet ASMR, Buñuel, Crash, Danger: Diabolik ($500)." },
-  { id: 135, cat: "EP5 — SASHA", text: "Goes to premiere. In character. As the inflatable doll. Confronts with PRESENCE. Ownership through embodiment." },
-  { id: 136, cat: "EP5 — SASHA", text: "Final video: character's death. He's still subscribed. Can't message (basic tier). Subscribers say goodbye." },
-  { id: 137, cat: "EP5 — SASHA", text: "She logs off. Fine. Savings. Self-knowledge. ONLY character who walks away free." },
+  { id: 219, cat: "COMEDY RULES", text: "SPENDING MECHANIC PRINCIPLE: A slope, not a repeating gag. The dam-break structure means the FIRST payment arriving is the trigger \u2014 then queued automated payments fire in machine-gun sequence. Comedy from the speed differential between human-paced decisions and system-paced consequences. Not \"oh no another bill\" four times \u2014 one cascade that feels like a system failure." },
+  { id: 20, cat: "PILOT \u2014 LOCKED", text: "Logline: Political livestreamer with 65 viewers picks up package in centre, gets high, goes viral by accident, spends money he doesn\u2019t have, ends stuck at metro gate with declined card.", pinned: true },
+  { id: 21, cat: "PILOT \u2014 LOCKED", text: "Edoardo: Italian expat, late 20s. Aspirationally \u017Di\u017Eek. Read Cassirer, Benjamin, Adorno \u2014 can\u2019t land the tone. 65-70 regulars. Private Discord ~15 active. Stream NOT monetised (yet)." },
+  { id: 200, cat: "PILOT \u2014 LOCKED", text: "BESPOKE RANTS AS FREE SERVICE: Edoardo performs personalised anti-corporate rants on request for his chat. A bespoke service he has NEVER monetised. He does it for love and intellectual pride. The fact that it\u2019s free is not a gag \u2014 it\u2019s the foundation of the entire spending crisis. He gives away the one thing people would actually pay for." },
+  { id: 37, cat: "PILOT \u2014 LOCKED", text: "VIEWER COUNT AS DRAMATIC ENGINE: High counts \u2192 delusional overcommitment. Low counts \u2192 evidence of those commitments left in his hands (bags, pitch deck, Bonus Card)." },
+  { id: 38, cat: "PILOT \u2014 LOCKED", text: "Episode reads as if Edoardo edited it himself. When the visual language breaks down at the metro gate \u2014 the show takes over from his version of himself." },
+  { id: 307, cat: "PILOT \u2014 LOCKED", text: "THE VILLAGE (65 VIEWERS): The baseline stream is a bucolic, chill environment. Regulars use him for background noise. He operates as a \"Jukebox of Rage\" \u2014 taking custom requests from viewers to philosophically destroy the specific companies they are currently working for." },
+  { id: 22, cat: "PILOT \u2014 LOCKED", text: "Opens streaming to regulars, showing his own 2021 video. \"I was ahead of my time.\" Chat: \"bro we watched this a year ago.\" Doorbell \u2014 missed delivery. Rants about delivery person, apologises to working class." },
+  { id: 308, cat: "PILOT \u2014 LOCKED", text: "LORE-KEEPERS AS STOCK HOLDERS: Two users treat his stream like an archive. Track absurd continuity details of outfits and past streams. They are \"streamer hunters\" who hold his stock early; when he finally goes viral, they don\u2019t try to save him \u2014 they just enjoy the beautiful explosion of his dignity." },
+  { id: 28, cat: "PILOT \u2014 LOCKED", text: "TWO CHAT REGULARS: Unauthorized archivists of his life. Correct him about his OWN history. \"four years bro, you always forget the first winter.\" More reliable narrators of him than he is." },
+  { id: 23, cat: "PILOT \u2014 LOCKED", text: "Chat pushes him outside: \"Bro just go get it yourself and stream it.\" They\u2019ve seen him return high and loose before. Slight devilish intent \u2014 they want the funny version. He hears \"we want more of you.\"" },
+  { id: 210, cat: "PILOT \u2014 LOCKED", text: "\u20AC85 THEORY BOOK AS DEAD WEIGHT: He picks up the package \u2014 the thing that started the whole IRL stream. It\u2019s an \u20AC85 theory book he ordered that morning. \"Very important.\" From this point on he carries it as literal dead weight through every remaining scene. Bags in one hand, book in the other. The intellectual purchase that caused the journey becomes physical burden for the rest of the episode." },
+  { id: 24, cat: "PILOT \u2014 LOCKED", text: "TRAM SCENE: Boards ranting, exits mid-sentence, forgets to check out. OV-chipkaart silently deducts. He doesn\u2019t notice. We do. First invisible money loss." },
+  { id: 301, cat: "PILOT \u2014 LOCKED", text: "THE WALKING ODYSSEY: There is no plot-device delay at the pickup point. The weather is nice, the viewer count is slightly up, and the chat says \"show us some dam bro.\" Edoardo CHOOSES to walk. The tram kept him distant and complainy; walking physically exposes him to the ghosts of his past and immediate temptations." },
+  { id: 302, cat: "PILOT \u2014 LOCKED", text: "THE SMILING GHOST: Edoardo\u2019s job history is a graveyard of places he lasted a maximum of 14 days (night receptionist, cafes). He was never dramatically fired in a blaze of Marxist glory. He simply called in sick, made excuses, smiled politely, and eventually ghosted them." },
+  { id: 25, cat: "PILOT \u2014 LOCKED", text: "COFFEESHOPS: 5-6 stops. Each a 10-15 second RPG transition (FFT/Fire Emblem grid). Select coffeeshop \u2192 MOVE \u2192 sprite walks \u2192 cut to live action walking out with joint mid-sentence. Money indicator ticking." },
+  { id: 304, cat: "PILOT \u2014 LOCKED", text: "FIDGET PROP (JOINT CONES): Nervous habit of playing with empty plastic pre-roll cone tubes. Buys a 3-for-20 tourist deal and accumulates the empty tubes throughout the stream. Physical prop that tracks the passage of time and consumption." },
+  { id: 305, cat: "PILOT \u2014 LOCKED", text: "FREDDY KRUEGER SURRENDER: Wears a horizontally striped sweater he believes channels Syd Barrett. Chat immediately calls it Freddy Krueger. Pissed at first. By the third joint, surrenders to the bit \u2014 slides three empty plastic cones onto his fingers like claws and plays the character to the chat." },
+  { id: 26, cat: "PILOT \u2014 LOCKED", text: "PAOLO STORY: Smartshop in a former church. Paolo (formerly Guido). Counted candy stores: 1, 2, 3, 4, 5, 6 \u2014 decided Western civilisation was finished. Now in Albanian monastery. Revelation 18:11. Edoardo: \"He is so coherent.\"" },
+  { id: 202, cat: "PILOT \u2014 LOCKED", text: "MOTHER JOINS CHAT (~150 VIEWERS): She appears under her FULL LEGAL NAME. Not a username. Her actual name. She treats the stream chat like a messaging app \u2014 types like she\u2019s sending a private WhatsApp. \"Edoardo did you eat today?\" The chat can see everything. She has no concept of public vs private digital space." },
+  { id: 309, cat: "PILOT \u2014 LOCKED", text: "MAMMA CUMITINI: His mother joins the chat under her REAL NAME before the massive flood. Treats Twitch like WhatsApp. The Lore-Keepers use Google Translate to secretly interview her about Edoardo\u2019s past (locking himself out in pajamas for a pizza). She stays in the chat until the very end." },
+  { id: 203, cat: "PILOT \u2014 LOCKED", text: "LORE KEEPERS INTERROGATE MOTHER: The two archivist regulars immediately start questioning her via auto-translation about past incidents Edoardo has described differently on stream. They are fact-checking him THROUGH HIS OWN MOTHER. She is a primary source who doesn\u2019t know she\u2019s being cross-referenced. Edoardo is being peer-reviewed live by his parent and his audience simultaneously." },
+  { id: 401, cat: "PILOT \u2014 LOCKED", text: "LORE KEEPERS VS MOM \u2014 TRANSLATION ERRORS: Google Translate interrogation about \"pyjama-pizza-Debord incident.\" Translation errors create secondary myths in the chat (\"clean the canal Edo\"). A parallel show happening in chat Edoardo can\u2019t see." },
+  { id: 205, cat: "PILOT \u2014 LOCKED", text: "UNIVERSITY TOILET STOP: He goes to the university for a free toilet (budget logic). But the high + being back in the building where he studied loosens him. The location does the work \u2014 it unlocks personal anecdotes he wouldn\u2019t tell in other settings. The university is emotionally loaded space and the weed removes the filter." },
+  { id: 206, cat: "PILOT \u2014 LOCKED", text: "PERSONAL ANECDOTES AT UNIVERSITY: Clubs he ran, showing up to class in women\u2019s clothes, canal pissing rituals with friends. This is Edoardo at his most genuinely entertaining \u2014 not performing analysis, just telling stories from his actual life. The chat responds to THIS version of him much more than the \u017Di\u017Eek version. He doesn\u2019t notice the difference." },
+  { id: 207, cat: "PILOT \u2014 LOCKED", text: "PURPLE SOCKS + SILVER BIRKENSTOCKS: First downward camera reveal. The phone tilts down and we see what he\u2019s actually wearing on his feet. Purple socks. Silver Birkenstocks. This is not a costume choice \u2014 this is just what he put on. The chat sees it. He doesn\u2019t know it\u2019s visible. The outfit has been there the entire stream but nobody saw until now." },
+  { id: 306, cat: "PILOT \u2014 LOCKED", text: "SOCKS AND SANDALS REVEAL: At the university, telling stories about showing up to class in women\u2019s clothes and urinating in canals. Points camera down to prove he is currently wearing purple socks and silver Birkenstocks. Chat loses its mind. The reveal is incidental \u2014 he doesn\u2019t understand why it\u2019s funny." },
+  { id: 27, cat: "PILOT \u2014 LOCKED", text: "BICYCLE CRASH: Ranting in bike lane. Dutch woman hits him. Both furious. She\u2019s right. Doesn\u2019t drop phone. Chat explodes. Someone clips it. Viewers start growing: 65\u2192120\u2192200\u2192400\u2192800." },
+  { id: 29, cat: "PILOT \u2014 LOCKED", text: "KEES TIKKIE: \u20AC3.50. IRL friend appears in chat. \"Sorry bro, I didn\u2019t know your stream was successful like that.\" Edoardo loses it. Rant about Tikkies as philosophically violent." },
+  { id: 204, cat: "PILOT \u2014 LOCKED", text: "\u20AC3.50 DONATION \u2014 \"KEES CAN SUCK A DICK\": A stranger donates exactly \u20AC3.50 \u2014 the EXACT amount of Kees\u2019s Tikkie \u2014 with the message \"kees can suck a dick.\" This is Edoardo\u2019s first experience of strangers PAYING MONEY to take his side. Someone he\u2019s never met validated his grievance with cash. This is the gateway drug. The menace era starts here. He\u2019s tasted it now." },
+  { id: 303, cat: "PILOT \u2014 LOCKED", text: "ALBERT HEIJN BONUS CARD WALLET: Rant that discounts are an illusion created by artificial markups, cards insultingly accessible. Opens wallet to reveal one \u20AC10 note but dozens of blue AH Bonus cards. Flicks them at camera one by one: \"Every time I forget it at home, I get another and another and another.\"" },
+  { id: 311, cat: "PILOT \u2014 LOCKED", text: "CONVERSION BY MATH: Anti-capitalist in college because it fit his milieu. While reminiscing about unmonetized campus clubs (with hundreds of followers), the international chat runs the math on his lost revenue. The sheer volume of global viewers pointing out missed profits triggers a 180-degree pivot." },
+  { id: 208, cat: "PILOT \u2014 LOCKED", text: "INTERNATIONAL CHAT OUTNUMBERS HIS FRAMEWORK: As viewers grow into the thousands, the chat starts running the math on everything Edoardo describes \u2014 his rent, his spending, his non-monetised stream, his free rants. The collective intelligence of thousands of strangers with calculators outnumbers his theoretical framework by sheer volume. They see what he can\u2019t: the numbers don\u2019t work and never did." },
+  { id: 312, cat: "PILOT \u2014 LOCKED", text: "THE REVELATION (EXACT WORDING): He does not realize he should have been a startup founder. He simply realizes: \"I could have monetized it all. I actually love money. I was a fool.\"" },
+  { id: 209, cat: "PILOT \u2014 LOCKED", text: "LIVE CONVERSION: The chat\u2019s math triggers a real-time epiphany. He could have monetised all of it. He ACTUALLY loves money. He was a fool. This is not a gag \u2014 it\u2019s a genuine shift in self-perception happening on camera. The irony is that this sincere vulnerable moment IS the most monetisable content he\u2019s ever produced, and he still doesn\u2019t see that layer." },
+  { id: 33, cat: "PILOT \u2014 LOCKED", text: "SPENDING SPREE: Commercial gallery. Every purchase justified from inside the afternoon\u2019s logic. Every purchase is content. Bags accumulate. Money \u2192 zero." },
+  { id: 215, cat: "PILOT \u2014 LOCKED", text: "SPENDING MECHANIC = DAM, NOT DRIP: The spending is NOT a recurring gag. It\u2019s a slope. Money arrives (donations, the gateway drug), ONE payment triggers, then everything that was queued fires at MACHINE PACE simultaneously. A dam breaking, not a dripping tap. The comedy is the speed differential: Edoardo\u2019s spending is human-paced (one purchase at a time, each justified), but the automated billing system catches up all at once. Dutch financial infrastructure as comedy engine." },
+  { id: 214, cat: "PILOT \u2014 LOCKED", text: "BILLS AS PUSH NOTIFICATIONS CHAT READS FIRST: Zorgverzekering. Belastingdienst. Huur. The bills arrive as push notifications on his phone while he\u2019s streaming. The chat sees them pop up on screen BEFORE Edoardo reads them. The audience knows he\u2019s broke before he does. Information asymmetry as comedy \u2014 thousands of people watching a man\u2019s financial life collapse in real time, reading his mail over his shoulder." },
+  { id: 34, cat: "PILOT \u2014 LOCKED", text: "BILLS HIT: Zorgverzekering. Belastingdienst. Huur. All arrive while he\u2019s on live carrying bags." },
+  { id: 30, cat: "PILOT \u2014 LOCKED", text: "LENOR SCENE: Edge of Red Light District. Empty window. TE HUUR. \"Don\u2019t you remember the video, chat? It\u2019s that girl.\" Chat overlay STAYS VISIBLE BUT EMPTY \u2014 the silence is a visual fact. Ren\u2019Py Visual Novel. Simlish. Text boxes. Dialogue from 2021 film." },
+  { id: 31, cat: "PILOT \u2014 LOCKED", text: "LENOR KEY LINE: \"Love died. My body cannot produce love anymore. It produces fantasy. I am a factory of fantasies, and you are the consumer.\" Intimacy route locked. Only Transaction route. Window = dark glass. TE HUUR." },
+  { id: 406, cat: "PILOT \u2014 LOCKED", text: "LENOR + HERON SIMULTANEITY: Visual Novel plays. Simlish. Locked routes. Heron visible in background of the window scene. Two shows running simultaneously. Chat split between \"how is this possible\" and \"damn I need to call my mom.\"" },
+  { id: 32, cat: "PILOT \u2014 LOCKED", text: "POST-LENOR SILENCE: Back to live footage. Standing in front of empty window. Doesn\u2019t say anything. Keeps walking. Chat doesn\u2019t push. For once, nobody types." },
+  { id: 211, cat: "PILOT \u2014 LOCKED", text: "\"EAT THE BOOK\" THREAD: Seeded early by a \u20AC1 donation on the tram: someone dares him to eat a page. The thread recurs across the episode as an escalating dare \u2014 more donations pile on, the dollar amount climbing. It pays off when he SNAPS and actually eats a page. Dry mouth from the weed. 20,000 viewers. His mother watching in chat. The dare economy works because each individual donation is tiny but the accumulated pressure is enormous." },
+  { id: 313, cat: "PILOT \u2014 LOCKED", text: "EATING THE BIBLIOGRAPHY: Early \u2014 \u20AC1 donation says \"eat the book then.\" Laughs it off. As stream peaks and Swarm takes over, TTS donations escalate the demand. Hyped on Sativa and clout, he snaps: \"Fuck you chat, you thought I wasn\u2019t gonna do it? Don\u2019t fucking try me.\" Rips out a page and eats it. Impossibly dry. His mother watches in the chat." },
+  { id: 201, cat: "PILOT \u2014 LOCKED", text: "COTTONMOUTH / HYDRATION / PEE LOOP: A PHYSICAL CLOCK running across the episode. Gets high \u2192 cottonmouth \u2192 drinks constantly \u2192 needs to pee \u2192 finds spot \u2192 drinks again. Four stops total. The loop is a bodily engine that keeps forcing him into new locations and new trouble. Each pee stop is a scene transition driven by his bladder, not by plot." },
+  { id: 217, cat: "PILOT \u2014 LOCKED", text: "COTTONMOUTH \u2192 PEE \u2192 SNIPER CAUSAL CHAIN: The hydration loop is not just a running gag \u2014 it\u2019s a causal engine. Gets high \u2192 cottonmouth \u2192 drinks \u2192 needs to pee \u2192 finds canal \u2192 sniper finds HIM at the canal because he\u2019s stationary and exposed. The bodily function creates the vulnerability that the sniper exploits. Every physical consequence chains into the next." },
+  { id: 212, cat: "PILOT \u2014 LOCKED", text: "STREAM SNIPER AT CANAL PEE: During the fourth and final canal pee (hydration loop payoff), a stream sniper who physically tracked him says \"hello, police\" from off-camera. Edoardo turns \u2014 still urinating \u2014 and nearly flashes his own stream while simultaneously pissing on the sniper\u2019s shoes. Neither party knows what to do. The comedy is the MUTUAL paralysis: the sniper got what he wanted (proximity to the streamer) and immediately regrets it." },
+  { id: 213, cat: "PILOT \u2014 LOCKED", text: "THREE-WAY COLLISION AT BRIDGE PEE: The gag operates across all three registers simultaneously. EDOARDO: turning mid-pee, caught between exposure and dignity. PHYSICAL WORLD: urine on shoes, a stranger who thought this would be funny now has wet feet. CHAT: they see the near-flash, they see the sniper, they caused this by making the stream popular enough to attract snipers. The chat is watching the consequences of its own influence materialise in physical space." },
+  { id: 310, cat: "PILOT \u2014 LOCKED", text: "THE SWARM (DEGENERACY MULTIPLIER): As viewers scale to thousands, the intimacy dies. Edoardo can no longer read custom requests. Chat becomes a hostile, fast-moving wall of emotes, forcing him to \"go Hollywood\" and act like a circus animal to keep their attention. The village became a stadium." },
+  { id: 400, cat: "PILOT \u2014 LOCKED", text: "CUSTOM RANT DEATH: User types \"do the ING rant Edo\" \u2192 buried under \"FREDDY FREDDY FREDDY\" in 0.5 seconds. Tries twice. Buried twice. Mechanical murder of intimacy. The village dies not with a bang but with a scroll." },
+  { id: 407, cat: "PILOT \u2014 LOCKED", text: "THE SWARM ARRIVES: 30 bodies emerge from alleys. Circle the gate. He raises hand like a general. They rush the EMERGENCY EXIT, film him passing. Digital becomes physical. They use him as cover, steal his viewers, ghost immediately." },
+  { id: 408, cat: "PILOT \u2014 LOCKED", text: "CONTENT LOCUSTS: \"Thanks for the content bro!\" \"Decline again for my TikTok?\" \u2192 disperse when he goes offline. Extract clip, leave husk. Proves IRL viewers are worse than chat because they can smell you." },
+  { id: 39, cat: "PILOT \u2014 LOCKED", text: "RTS ENDING: Metro gate declined. Edoardo tries to COMMAND his chat viewers like RTS units \u2014 summon crowd, storm the gates. Genre shift: RPG \u2192 Visual Novel \u2192 RTS. One last delusion: he thinks he can direct reality like a game.", pinned: true },
+  { id: 40, cat: "PILOT \u2014 LOCKED", text: "RTS ENDING pt2: For one second it ALMOST works \u2014 crowd energy builds, looks like they\u2019ll force through. Then: ONE tall serious Dutch metro lady appears. Does NOTHING. Just EXISTS with authority. Entire mob evaporates. Smash back through gates in retreat." },
+  { id: 41, cat: "PILOT \u2014 LOCKED", text: "RTS ENDING pt3: Edoardo alone. No ticket. Getting fined. ALL ON STREAM. Highest viewer count = worst moment. Fine gives him reason to call mum for money." },
+  { id: 216, cat: "PILOT \u2014 LOCKED", text: "METRO GATE WIDE SHOT \u2014 THE SHOW TAKES OVER: When the stream dies, the TV camera takes over for the first time. Wide shot. A man in a Freddy Krueger sweater with empty joint cones on his fingers, holding a partially eaten theory book, bags in both hands, shouting at a dead phone for his mother. This is the first moment the SHOW sees Edoardo from the outside \u2014 not through his stream, not through his self-image, but from across the station. The image the world actually sees." },
+  { id: 314, cat: "PILOT \u2014 LOCKED", text: "METRO GATE FINAL STATE: Over-encumbered with bags, the heavy book, and the plastic claws. The UI and the chat strip away. Left shouting at his phone, begging his chat and his mother for an Uber, before the episode cuts to the Ep2 protagonist swiping through the gate." },
+  { id: 409, cat: "PILOT \u2014 LOCKED", text: "FINAL IMAGE: Surrounded by 30 phones recording in 4K. Shouts \"Mamma\" at dead device. LED circle light. Heron watches from the platform edge. Zoo animal, not streamer. The distance collapsed into suffocation." },
+  { id: 415, cat: "PILOT \u2014 LOCKED", text: "THE ENDING (LOCKED): \"Mamma\" at dead phone. 30 LED screens. Heron. Gate beeps. Woman from Ep2 swipes through. Camera follows her. The joke: he asked 20,000 for an Uber. Got 30 filming him fail. Shouts to mom in a chat she\u2019s lost in. The show leaves his broadcast, sees him from outside for the first time: just a guy with bags, cones, swollen book, shouting at glass." },
+  { id: 42, cat: "PILOT \u2014 LOCKED", text: "BATON PASS: Woman sidestepping active chaos \u2014 not passing a still figure, making ACTIVE CHOICE to not get involved. Most Dutch possible. Camera follows her instead." },
+  { id: 410, cat: "PILOT \u2014 LOCKED", text: "MONEY INDICATOR THREAD: Chat sees it tick down. Edoardo doesn\u2019t. Regulars scream \"STOP\" \u2192 buried under \"DO IT.\" The number is always visible to everyone except the person it belongs to." },
+  { id: 411, cat: "PILOT \u2014 LOCKED", text: "MOM TTS OPERA: \u20AC1 donations trigger her messages in TTS. Guanyin voice. Divine maternal intervention interrupting the menace era at the worst moments. She doesn\u2019t know she\u2019s being weaponised by strangers paying \u20AC1 to deploy her." },
+  { id: 412, cat: "PILOT \u2014 LOCKED", text: "NINE-DAY JOBS THREAD: Hotel is the only real scene. The rest are chat callouts he denies. Lore-Keepers list the places: \"wasn\u2019t that the cafe on Kinkerstraat?\" \"no that was the one on Overtoom, he lasted THREE days there.\" Pattern, not wound." },
+  { id: 413, cat: "PILOT \u2014 LOCKED", text: "JOINT CONES AS INVENTORY: Accumulate in pockets \u2192 move to fingers. Inventory management as character development. By the climax he has three on each hand. The Freddy Krueger bit is not a costume choice \u2014 it\u2019s the natural endpoint of consumption." },
+  { id: 414, cat: "PILOT \u2014 LOCKED", text: "SWEATER ARGUMENT THREAD: Syd Barrett \u2192 Freddy Krueger \u2192 Cone Krueger. Three stages of physical surrender to the chat\u2019s naming power. He loses the argument about his own clothes." },
+  { id: 315, cat: "PILOT \u2014 LOCKED", text: "THE NAMELESS HERON: An unacknowledged continuity nod for the Lore-Keepers. Same bird Edoardo previously fed half a raw haring to on a past stream. Appears peripherally, completely indifferent to his suffering. No names, no rivalries. Just a bird that eats better than he does." },
+  { id: 36, cat: "PILOT \u2014 LOCKED", text: "THE HERON: Grey heron appears peripherally throughout \u2014 canal edge, bike path, metro platform. Edoardo never notices. Real footage. Not explained." },
+  { id: 54, cat: "PILOT \u2014 PROPOSED", text: "COFFEESHOP SPONSORSHIP PITCH: Printed one-page pitch deck. PIE CHART: YOUR BRAND (big) / MY INTEGRITY (tiny). Owner: \"How many come?\" Ed: \"All sixty-five. Potentially.\" Owner: \"Nee.\"" },
+  { id: 55, cat: "PILOT \u2014 PROPOSED", text: "RPG UI AS COMEDY TRACK: Status effects \u2014 \"BUZZED\" debuff, \"NOSTALGIC\", \"IMPULSE BUY\" ability unlocking. UI treats terrible decisions with neutral game logic." },
+  { id: 56, cat: "PILOT \u2014 PROPOSED", text: "RPG TRANSITIONS GET LAZIER: First coffeeshop = full grid. By fifth, barely rendering. Game engine tired of the same bad decision." },
+  { id: 67, cat: "PILOT \u2014 PROPOSED", text: "FFT GRID AS 2-SECOND MENTAL GLITCH: Not a skeleton. A tumor. Appears when bureaucracy stops loading." },
+  { id: 58, cat: "PILOT \u2014 PROPOSED", text: "OV-CHIPKAART AS CHEKHOV\u2019S GUN: Balance visible for half a second during RPG transition. Metro decline not a surprise to anyone except Edoardo." },
+  { id: 52, cat: "PILOT \u2014 PROPOSED", text: "OLD CHAT GUYS SET UP HERON: One types \"oh look it\u2019s Gerard\" on canal BEFORE stall scene. Edoardo scrolls past. Audience gets info before protagonist. Setup 30 min before punchline." },
+  { id: 53, cat: "PILOT \u2014 PROPOSED", text: "OLD CHAT GUYS DISAGREE: One thinks Edoardo peaked 2 months ago. Other thinks peak coming. They argue IN CHAT while he has a crisis. Sports commentators for a sport only they watch." },
+  { id: 57, cat: "PILOT \u2014 PROPOSED", text: "SOMEONE IN CHAT DOING THE MATH: One viewer posting running total. No commentary. Just numbers. Nobody acknowledges it." },
+  { id: 62, cat: "PILOT \u2014 PROPOSED", text: "STREAM DELAY AS PARALLEL REALITY: Chat responds to 30 seconds ago. He answers their response but they\u2019ve moved on. Permanently out of sync with past self." },
+  { id: 68, cat: "PILOT \u2014 PROPOSED", text: "CHAT OVERLAY VISIBLE BUT EMPTY during Lenor \u2014 empty chat box next to Ren\u2019Py text boxes. You SEE the nobody." },
+  { id: 50, cat: "PILOT \u2014 PROPOSED", text: "GERARD THE HERON: A bigger content creator than Edoardo. Sponsored, capped, 65,000 followers. TikTok. Edoardo fed him a haring months ago. The heron is 1000 Edoardos." },
+  { id: 51, cat: "PILOT \u2014 PROPOSED", text: "COLLAB PITCH TO HERON: At 400 viewers Edoardo announces \"the collab.\" Approaches Gerard with EXACT same energy as coffeeshop pitch. \"Integrated content. Revenue split.\" Dead serious. To a bird." },
+  { id: 64, cat: "PILOT \u2014 PROPOSED", text: "METRO GATE AS COLLAB PITCH: At 58 viewers, streaming terminology on the turnstile. \"Partnership.\" \"Shadowban.\" At 400 = ambitious. At 58 = talking to furniture." },
+  { id: 59, cat: "PILOT \u2014 PROPOSED", text: "STREAM SNIPER: Appears behind him. Chat: \"BEHIND YOU.\" He never turns. Sniper gives up. Chat: \"you just lost your only real fan.\"" },
+  { id: 60, cat: "PILOT \u2014 PROPOSED", text: "FIRST DONATION: \u20AC2 on a bridge. Reads mundane message like scripture. Regulars FURIOUS: \"WE\u2019VE BEEN HERE FOR A YEAR.\" Labour dispute on a bridge while high." },
+  { id: 61, cat: "PILOT \u2014 PROPOSED", text: "PHONE BATTERY AS CHARACTER: Talks to % like a sick relative. Can\u2019t close Spotify \u2014 city goes silent without it. Reopens. Battery drops 2%. Chat: \"he chose music over us.\"" },
+  { id: 63, cat: "PILOT \u2014 PROPOSED", text: "TIKKIE AS RECURRING WEAPON: Multiple throughout \u2014 tiny debts surfacing on worst day. Each technically fair." },
+  { id: 65, cat: "PILOT \u2014 PROPOSED", text: "GALLERY PURCHASES MAKE PERFECT SENSE: Airtight justification from inside being high + viral. Money indicator = only truth." },
+  { id: 66, cat: "PILOT \u2014 PROPOSED", text: "BONUS CARD RANT: About DISAPPOINTMENT. Card is FREE. \"A VIP area where the rope is imaginary.\"" },
+  { id: 402, cat: "PILOT \u2014 PROPOSED", text: "GIMBAL UPRISING: Auto-tracks pigeon, cloud, painting of Jesus. Edoardo: \"I am the content.\" Gimbal: *vibrates*. Tool achieves sentience, rejects user. AI labor consciousness as physical comedy." },
+  { id: 403, cat: "PILOT \u2014 PROPOSED", text: "HOTEL STEALTH PEE: Narrates like heist game. \"I worked here for nine days.\" Opens wrong door (someone inside). Chat directs him: \"other left.\" Memory vs reality \u2014 he wasn\u2019t there long enough to matter, but acts like he built the place." },
+  { id: 404, cat: "PILOT \u2014 PROPOSED", text: "THE \u20AC100 SPONSORSHIP READ: Amsterdam Dungeon ad read while high, cones on fingers, standing next to a torture poster. Messes up the promo code. Monetization attempt immediately corrupted by his own state." },
+  { id: 405, cat: "PILOT \u2014 PROPOSED", text: "DIGID HELL: Tries to set up stream monetization on the sidewalk mid-stream. Needs forms, BSN, DigiD verification. Screenshares his BSN accidentally. Feral capitalist meets Dutch bureaucracy. Immediate doxxing as punchline." },
+  { id: 218, cat: "PILOT \u2014 PROPOSED", text: "STREAM SNIPER SWARM FOR RTS ENDING: Multiple stream snipers converge for the metro gate sequence \u2014 the same people who tracked him through the city now form part of the crowd he tries to command as RTS units. The snipers who followed him all day become his army. Their parasocial attachment to him is the resource he tries to weaponise." },
+  { id: 35, cat: "PILOT \u2014 SHOT DOWN", text: "OLD SILENT ENDING: Visual language stripped, no overlays, no chat, no grid. Train arrives/departs. He doesn\u2019t move. \u2014 REJECTED: \"loser-like silence\", the show\u2019s voice is noise not silence. European festival energy \u2260 this show." },
+  { id: 80, cat: "PILOT \u2014 SHOT DOWN", text: "Claude\u2019s JRPG battle overlay for Tikkies (\"Enemy MARK appears!\") \u2014 too heavy-handed." },
+  { id: 81, cat: "PILOT \u2014 SHOT DOWN", text: "Wrapping jokes with closing observations / tidy summarising lines \u2014 kills the bit every time." },
+  { id: 82, cat: "PILOT \u2014 SHOT DOWN", text: "Inventing rant topics for Edoardo \u2014 creative violation. Only E. writes Edoardo\u2019s voice." },
+  { id: 83, cat: "PILOT \u2014 SHOT DOWN", text: "\"Smart guy who can\u2019t monetise intelligence\" framing \u2014 NO. Critical theory has no practical application BY DESIGN." },
+  { id: 84, cat: "PILOT \u2014 SHOT DOWN", text: "Edoardo smokes weed before every stream \u2014 WRONG. Stoner side comes out when stressed." },
+  { id: 85, cat: "PILOT \u2014 SHOT DOWN", text: "Earlier version: Edoardo as video-essayist who doesn\u2019t stream." },
+  { id: 86, cat: "PILOT \u2014 SHOT DOWN", text: "Editorializing about what things MEAN in treatment language." },
+  { id: 87, cat: "PILOT \u2014 SHOT DOWN", text: "Gerard bit ending with ribbon/bow (\"His legacy is bird discovery\") \u2014 E: \"i\u2019ll never talk to you again.\"" },
+  { id: 88, cat: "PILOT \u2014 SHOT DOWN", text: "Spending sequence as fast montage with music \u2014 \"would aestheticize the spending.\"" },
+  { id: 89, cat: "PILOT \u2014 SHOT DOWN", text: "Earlier Ep2: Mila & Daan \u2192 superseded by Mo & Sven." },
+  { id: 90, cat: "PILOT \u2014 SHOT DOWN", text: "Earlier Ep3: Sophie \u2192 superseded by Elara." },
+  { id: 91, cat: "PILOT \u2014 SHOT DOWN", text: "Earlier Ep4: Youssef delivery rider \u2192 superseded by buy-now-pay-later." },
+  { id: 92, cat: "PILOT \u2014 SHOT DOWN", text: "Earlier Ep5: Nina \u2192 superseded by Sasha." },
+  { id: 100, cat: "EP2 \u2014 HUSTLES", text: "Ensemble: three hustles, same neighbourhood. Mo & Sven furniture via public transport. Metro-gate woman runs illegal restaurant. Neighbour has tuk tuk. Worlds overlap unknowingly." },
+  { id: 101, cat: "EP2 \u2014 HUSTLES", text: "Mo & Sven: Memphis sofa across Amsterdam on public transport. Treat it as serious logistics. Gap = operational seriousness vs absurdity." },
+  { id: 102, cat: "EP2 \u2014 HUSTLES", text: "TUK TUK LOOPHOLES: Kostendeling (BlaBlaCar defence), Ervaring (\"cultural tour\" not transport), Vrijwillige Bijdrage (donation jar)." },
+  { id: 103, cat: "EP2 \u2014 HUSTLES", text: "Tuk tuk character: depreciation includes emotional damage from haggling, fuel adjusted for headwinds. Spreadsheet that\u2019d make Belastingdienst weep." },
+  { id: 104, cat: "EP2 \u2014 HUSTLES", text: "Needs mapping: how do three hustles intersect spatially?" },
+  { id: 110, cat: "EP3 \u2014 ELARA", text: "Late 20s, polished professional. Secretly homeless. Lives in 24/7 gym. Maintains appearances flawlessly." },
+  { id: 111, cat: "EP3 \u2014 ELARA", text: "Mass apartment viewing \u2192 elimination competition \u2192 battle royale." },
+  { id: 112, cat: "EP3 \u2014 ELARA", text: "Gap: looks perfect / has no address. Most unstable person in room must appear most grounded." },
+  { id: 113, cat: "EP3 \u2014 ELARA", text: "Health bars over candidates during small talk. Chamber piece \u2014 tightest, most constrained episode." },
+  { id: 114, cat: "EP3 \u2014 ELARA", text: "NOT passive \u2014 actively dismantles competition. To win \"stability\" = most ruthlessly strategic." },
+  { id: 120, cat: "EP4 \u2014 BUY NOW DIE LATER", text: "Series\u2019 open wound. Multiple iterations rejected. Most resistant to development." },
+  { id: 121, cat: "EP4 \u2014 BUY NOW DIE LATER", text: "Klarna, Afterpay \u2014 the day ALL deferred payments come due simultaneously." },
+  { id: 122, cat: "EP4 \u2014 BUY NOW DIE LATER", text: "Gap: has everything / owns nothing / about to have less than nothing." },
+  { id: 123, cat: "EP4 \u2014 BUY NOW DIE LATER", text: "Should be female for 3-3 gender split." },
+  { id: 124, cat: "EP4 \u2014 BUY NOW DIE LATER", text: "Needs: what\u2019s she DOING that day that makes timing unbearable?" },
+  { id: 130, cat: "EP5 \u2014 SASHA", text: "Cam girl, cinephile. Cam room like Tarkovsky set. 60+ videos of serialised narrative. Subscribers follow the plot." },
+  { id: 131, cat: "EP5 \u2014 SASHA", text: "Dutch director subscribed 2+ years. Basic tier \u20AC2.99. SUMMER50 discount. Never messaged. Just watched." },
+  { id: 132, cat: "EP5 \u2014 SASHA", text: "His film = her blocking, her lines, her arc. His grants vs her \u20AC42.71. He used a coupon." },
+  { id: 133, cat: "EP5 \u2014 SASHA", text: "\"I SHOULD HAVE COPYRIGHTED A DAMN FETISH.\" System doesn\u2019t recognise her as author." },
+  { id: 134, cat: "EP5 \u2014 SASHA", text: "References: Tampopo (ASMR), Daisies (food crush), Jeanne Dielman (\u20AC2 potato peeling), Eyes Wide Shut (voyeur-only), Beau Travail, Petra von Kant, Rear Window, Air Doll, Maya Deren, Tarantino feet ASMR, Bu\u00F1uel, Crash, Danger: Diabolik ($500)." },
+  { id: 135, cat: "EP5 \u2014 SASHA", text: "Goes to premiere. In character. As the inflatable doll. Confronts with PRESENCE. Ownership through embodiment." },
+  { id: 136, cat: "EP5 \u2014 SASHA", text: "Final video: character\u2019s death. He\u2019s still subscribed. Can\u2019t message (basic tier). Subscribers say goodbye." },
+  { id: 137, cat: "EP5 \u2014 SASHA", text: "She logs off. Fine. Savings. Self-knowledge. ONLY character who walks away free." },
   { id: 140, cat: "PRODUCTION", text: "Missing: ACTUAL PILOT SCRIPT PAGES." },
-  { id: 141, cat: "PRODUCTION", text: "Treatment needs more filmmaking language for Lakaaysha — camera, image degradation, heron as motif." },
+  { id: 141, cat: "PRODUCTION", text: "Treatment needs more filmmaking language for Lakaaysha \u2014 camera, image degradation, heron as motif." },
   { id: 142, cat: "PRODUCTION", text: "Amarte Fonds: Film Development Grant. Rolling applications. Supports experimental + duo applicants." },
   { id: 143, cat: "PRODUCTION", text: "Netherlands Film Fund High-End Series: longer-term path." },
   { id: 144, cat: "PRODUCTION", text: "Series bible (8-15 pages) = most important missing document." },
   { id: 145, cat: "PRODUCTION", text: "Lookbook / visual bible (10-20 pages, image-heavy). Not started." },
-  { id: 146, cat: "PRODUCTION", text: "Lakaaysha: \"we're nowhere near pitching.\" Need bible, treatment, lookbook, script pages." },
+  { id: 146, cat: "PRODUCTION", text: "Lakaaysha: \"we\u2019re nowhere near pitching.\" Need bible, treatment, lookbook, script pages." },
 ];
 
+// ─── REDUCER ───
+function appReducer(state, action) {
+  const now = new Date().toISOString();
+  switch (action.type) {
+    case "LOAD_NOTES":
+      return { ...state, notes: action.notes };
+    case "ADD_NOTE": {
+      const note = { id: Date.now(), category: action.category, status: "NEW", text: action.text, pinned: false, created: now, modified: now };
+      return { ...state, notes: [...state.notes, note] };
+    }
+    case "DELETE_NOTE":
+      return { ...state, notes: state.notes.filter(n => n.id !== action.id), deleted: state.notes.find(n => n.id === action.id) };
+    case "UNDO_DELETE":
+      return state.deleted ? { ...state, notes: [...state.notes, state.deleted], deleted: null } : state;
+    case "CLEAR_DELETED":
+      return { ...state, deleted: null };
+    case "UPDATE_NOTE":
+      return { ...state, notes: state.notes.map(n => n.id === action.id ? { ...n, ...action.fields, modified: now } : n) };
+    case "CYCLE_STATUS": {
+      const note = state.notes.find(n => n.id === action.id);
+      if (!note) return state;
+      const idx = STATUS_CYCLE.indexOf(note.status);
+      const next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
+      return { ...state, notes: state.notes.map(n => n.id === action.id ? { ...n, status: next, modified: now } : n) };
+    }
+    case "TOGGLE_PIN":
+      return { ...state, notes: state.notes.map(n => n.id === action.id ? { ...n, pinned: !n.pinned, modified: now } : n) };
+    case "RESET":
+      return { ...state, notes: INITIAL_IDEAS.map(migrateNote), deleted: null };
+    case "IMPORT_NOTES":
+      return { ...state, notes: action.notes.map(migrateNote) };
+    default:
+      return state;
+  }
+}
+
+// ─── HELPERS ───
+function boldPrefix(text) {
+  const m = text.match(/^([A-Z][A-Z0-9 /&\u2014\u2019\u20AC\u2192]+:)\s*/);
+  if (m) return React.createElement("span", null, React.createElement("strong", null, m[1]), " ", text.slice(m[0].length));
+  return text;
+}
+
+function generateMarkdown(notes) {
+  const grouped = {};
+  for (const n of notes) {
+    const key = `${n.category} [${n.status}]`;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(n);
+  }
+  let md = "";
+  for (const [key, items] of Object.entries(grouped)) {
+    md += `## ${key} (${items.length} notes)\n`;
+    for (const n of items) {
+      md += `- ${n.pinned ? "\u{1F4CC} " : ""}${n.text.substring(0, 120)}${n.text.length > 120 ? "..." : ""}\n`;
+    }
+    md += "\n";
+  }
+  return md;
+}
+
+function generateExportJSON(notes) {
+  const byCategory = {}, byStatus = {};
+  for (const n of notes) {
+    byCategory[n.category] = (byCategory[n.category] || 0) + 1;
+    byStatus[n.status] = (byStatus[n.status] || 0) + 1;
+  }
+  return {
+    schema: "dcb-whiteboard-v2",
+    notes,
+    meta: { totalNotes: notes.length, byCategory, byStatus, lastModified: new Date().toISOString() },
+  };
+}
+
+// ─── URL HASH PARSER ───
+function parseHash() {
+  const h = window.location.hash.substring(1);
+  const params = new URLSearchParams(h);
+  return { filter: params.get("filter") || "ALL", status: params.get("status") || "ALL" };
+}
+
+// ─── APP ───
 function App() {
-  const [ideas, setIdeas] = useState(() => {
-    try { const s = localStorage.getItem(STORAGE_KEY); if (s) { const d = JSON.parse(s); if (Array.isArray(d.ideas)) return d.ideas; } } catch {}
-    return INITIAL_IDEAS;
+  const initialHash = useMemo(parseHash, []);
+
+  const migratedInitial = useMemo(() => {
+    try {
+      const s = localStorage.getItem(STORAGE_KEY);
+      if (s) {
+        const d = JSON.parse(s);
+        const arr = Array.isArray(d.notes) ? d.notes : (Array.isArray(d.ideas) ? d.ideas : null);
+        if (arr && arr.length > 0) return arr.map(migrateNote);
+      }
+    } catch {}
+    return INITIAL_IDEAS.map(migrateNote);
+  }, []);
+
+  const [state, dispatch] = useReducer(appReducer, { notes: migratedInitial, deleted: null });
+  const { notes, deleted } = state;
+
+  // Collapse state
+  const [collapsed, setCollapsed] = useState(() => {
+    try { const c = localStorage.getItem(COLLAPSE_KEY); return c ? JSON.parse(c) : {}; } catch { return {}; }
   });
-  const [filter, setFilter] = useState("ALL");
+
+  const [filter, setFilter] = useState(initialHash.filter);
+  const [statusFilter, setStatusFilter] = useState(initialHash.status);
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState(null);
-  const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(null);
   const [editText, setEditText] = useState("");
   const [editCat, setEditCat] = useState("");
-  const [newText, setNewText] = useState("");
-  const [newCat, setNewCat] = useState("PILOT — PROPOSED");
+  const [editStatus, setEditStatus] = useState("");
   const [toast, setToast] = useState(null);
-  const [deleted, setDeleted] = useState(null);
+  const [quickCat, setQuickCat] = useState("PILOT");
   const listRef = useRef(null);
-  const inputRef = useRef(null);
+  const quickInputRef = useRef(null);
   const editRef = useRef(null);
+  const toastTimer = useRef(null);
+  const fileInputRef = useRef(null);
 
-  // Autosave (only ideas — positions managed by desktop)
+  // Swipe state
+  const touchRef = useRef({ id: null, startX: 0, startY: 0, dx: 0, locked: false });
+  const [swipeState, setSwipeState] = useState({ id: null, dx: 0 });
+
+  // ─── PERSISTENCE ───
   useEffect(() => {
     const t = setTimeout(() => {
       try {
-        const existing = localStorage.getItem(STORAGE_KEY);
-        if (existing) {
-          const d = JSON.parse(existing);
-          d.ideas = ideas;
-          d.savedAt = new Date().toISOString();
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(d));
-        } else {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ ideas, positions: {}, zIndices: {}, zoom: 0.52, pan: { x: 0, y: 0 }, savedAt: new Date().toISOString() }));
-        }
+        const data = generateExportJSON(notes);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        window.DCB_STATE = data;
       } catch {}
-    }, 400);
+    }, 300);
     return () => clearTimeout(t);
-  }, [ideas]);
+  }, [notes]);
 
-  const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 2500); }, []);
+  // Collapse persistence
+  useEffect(() => {
+    try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed)); } catch {}
+  }, [collapsed]);
 
+  // Expose DCB_STATE immediately
+  useEffect(() => { window.DCB_STATE = generateExportJSON(notes); }, [notes]);
+
+  // ─── TOAST ───
+  const showToast = useCallback((msg, duration) => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    setToast(msg);
+    toastTimer.current = setTimeout(() => setToast(null), duration || 2500);
+  }, []);
+
+  // ─── UNDO TIMER ───
+  useEffect(() => {
+    if (!deleted) return;
+    const t = setTimeout(() => dispatch({ type: "CLEAR_DELETED" }), 5000);
+    return () => clearTimeout(t);
+  }, [deleted]);
+
+  // ─── FILTERING ───
   const sl = search.toLowerCase();
   const filtered = useMemo(() => {
-    return ideas.filter(i => {
-      if (filter !== "ALL" && i.cat !== filter) return false;
-      if (search && !i.text.toLowerCase().includes(sl) && !i.cat.toLowerCase().includes(sl)) return false;
+    return notes.filter(n => {
+      if (filter !== "ALL" && n.category !== filter) return false;
+      if (statusFilter !== "ALL" && n.status !== statusFilter) return false;
+      if (search && !n.text.toLowerCase().includes(sl)) return false;
       return true;
     });
-  }, [ideas, filter, search, sl]);
+  }, [notes, filter, statusFilter, search, sl]);
 
-  const counts = useMemo(() => {
+  // Group by category
+  const grouped = useMemo(() => {
+    const g = {};
+    for (const n of filtered) {
+      if (!g[n.category]) g[n.category] = [];
+      g[n.category].push(n);
+    }
+    // Sort by CAT_KEYS order
+    const sorted = [];
+    for (const k of CAT_KEYS) {
+      if (g[k]) sorted.push({ category: k, notes: g[k] });
+    }
+    // Any remaining
+    for (const k of Object.keys(g)) {
+      if (!CAT_KEYS.includes(k)) sorted.push({ category: k, notes: g[k] });
+    }
+    return sorted;
+  }, [filtered]);
+
+  // Counts
+  const catCounts = useMemo(() => {
     const c = {};
-    for (const i of ideas) c[i.cat] = (c[i.cat] || 0) + 1;
+    for (const n of notes) c[n.category] = (c[n.category] || 0) + 1;
     return c;
-  }, [ideas]);
+  }, [notes]);
 
-  const addNote = useCallback(() => {
-    if (!newText.trim()) return;
-    const id = Date.now();
-    setIdeas(p => [...p, { id, cat: newCat, text: newText.trim(), pinned: false }]);
-    setNewText("");
-    setAdding(false);
-    showToast("Note added ✓");
-  }, [newText, newCat, showToast]);
+  const statusCounts = useMemo(() => {
+    const c = {};
+    const base = filter === "ALL" ? notes : notes.filter(n => n.category === filter);
+    for (const n of base) c[n.status] = (c[n.status] || 0) + 1;
+    return c;
+  }, [notes, filter]);
 
-  const deleteNote = useCallback((id) => {
-    const note = ideas.find(i => i.id === id);
-    setDeleted(note);
-    setIdeas(p => p.filter(i => i.id !== id));
-    setExpanded(null);
-    showToast("Deleted — tap UNDO");
-    setTimeout(() => setDeleted(null), 5000);
-  }, [ideas, showToast]);
+  // ─── QUICK CAPTURE ───
+  const [quickText, setQuickText] = useState("");
+  const addQuick = useCallback(() => {
+    if (!quickText.trim()) return;
+    dispatch({ type: "ADD_NOTE", category: quickCat, text: quickText.trim() });
+    setQuickText("");
+    showToast("Added \u2713");
+    if (quickInputRef.current) quickInputRef.current.focus();
+  }, [quickText, quickCat, showToast]);
 
-  const undoDelete = useCallback(() => {
-    if (deleted) { setIdeas(p => [...p, deleted]); setDeleted(null); showToast("Restored ✓"); }
-  }, [deleted, showToast]);
+  const cycleQuickCat = useCallback(() => {
+    setQuickCat(prev => {
+      const idx = CAT_KEYS.indexOf(prev);
+      return CAT_KEYS[(idx + 1) % CAT_KEYS.length];
+    });
+  }, []);
 
-  const startEdit = useCallback((idea) => {
-    setEditing(idea.id);
-    setEditText(idea.text);
-    setEditCat(idea.cat);
+  // ─── EDIT ───
+  const startEdit = useCallback((note) => {
+    setEditing(note.id);
+    setEditText(note.text);
+    setEditCat(note.category);
+    setEditStatus(note.status);
     setTimeout(() => editRef.current && editRef.current.focus(), 100);
   }, []);
 
   const saveEdit = useCallback(() => {
     if (!editing) return;
-    setIdeas(p => p.map(i => i.id === editing ? { ...i, text: editText.trim() || i.text, cat: editCat } : i));
+    dispatch({ type: "UPDATE_NOTE", id: editing, fields: { text: editText.trim(), category: editCat, status: editStatus } });
     setEditing(null);
     setExpanded(null);
-    showToast("Saved ✓");
-  }, [editing, editText, editCat, showToast]);
+    showToast("Saved \u2713");
+  }, [editing, editText, editCat, editStatus, showToast]);
 
-  const togglePin = useCallback((id) => {
-    setIdeas(p => p.map(i => i.id === id ? { ...i, pinned: !i.pinned } : i));
-    showToast("Pin toggled");
+  // ─── COPY MARKDOWN ───
+  const copyMarkdown = useCallback(() => {
+    const md = generateMarkdown(notes);
+    navigator.clipboard.writeText(md).then(() => showToast("Copied to clipboard \u2713"));
+  }, [notes, showToast]);
+
+  // ─── EXPORT JSON ───
+  const exportJSON = useCallback(() => {
+    const data = generateExportJSON(notes);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "dcb_whiteboard_v2.json"; a.click();
+    URL.revokeObjectURL(url);
+    showToast("Exported \u2713");
+  }, [notes, showToast]);
+
+  // ─── IMPORT JSON ───
+  const importJSON = useCallback((e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        const arr = data.notes || data.ideas || (Array.isArray(data) ? data : null);
+        if (arr) {
+          dispatch({ type: "IMPORT_NOTES", notes: arr });
+          showToast(`Imported ${arr.length} notes \u2713`);
+        } else {
+          showToast("Invalid file format");
+        }
+      } catch { showToast("Failed to parse JSON"); }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
   }, [showToast]);
 
-  const moveNote = useCallback((id, dir) => {
-    setIdeas(p => {
-      const idx = p.findIndex(i => i.id === id);
-      if (idx < 0) return p;
-      const target = dir === "up" ? idx - 1 : idx + 1;
-      if (target < 0 || target >= p.length) return p;
-      const arr = [...p];
-      [arr[idx], arr[target]] = [arr[target], arr[idx]];
-      return arr;
-    });
+  // ─── RESET ───
+  const resetAll = useCallback(() => {
+    if (confirm("Reset all notes to defaults? This clears your edits.")) {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(COLLAPSE_KEY);
+      dispatch({ type: "RESET" });
+      setCollapsed({});
+      showToast("Reset to defaults \u2713");
+    }
+  }, [showToast]);
+
+  // ─── SWIPE HANDLERS ───
+  const onTouchStart = useCallback((e, id) => {
+    const t = e.touches[0];
+    touchRef.current = { id, startX: t.clientX, startY: t.clientY, dx: 0, locked: false, scrollPrevented: false };
   }, []);
 
-  useEffect(() => { if (adding && inputRef.current) setTimeout(() => inputRef.current.focus(), 100); }, [adding]);
+  const onTouchMove = useCallback((e, id) => {
+    const tr = touchRef.current;
+    if (tr.id !== id) return;
+    const t = e.touches[0];
+    const dx = t.clientX - tr.startX;
+    const dy = t.clientY - tr.startY;
 
-  const pinnedCount = useMemo(() => filtered.filter(i => i.pinned).length, [filtered]);
+    if (!tr.locked) {
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+        tr.locked = true;
+        tr.scrollPrevented = true;
+      } else if (Math.abs(dy) > 10) {
+        tr.id = null;
+        setSwipeState({ id: null, dx: 0 });
+        return;
+      } else {
+        return;
+      }
+    }
 
+    if (tr.scrollPrevented) {
+      e.preventDefault();
+    }
+
+    tr.dx = dx;
+    setSwipeState({ id, dx });
+  }, []);
+
+  const onTouchEnd = useCallback((e, id) => {
+    const tr = touchRef.current;
+    if (tr.id !== id) return;
+    const dx = tr.dx;
+    tr.id = null;
+    setSwipeState({ id: null, dx: 0 });
+
+    if (dx < -80) {
+      // Delete
+      dispatch({ type: "DELETE_NOTE", id });
+      showToast("Deleted \u2014 tap UNDO", 5000);
+    } else if (dx > 80) {
+      // Edit
+      const note = notes.find(n => n.id === id);
+      if (note) startEdit(note);
+    }
+  }, [notes, showToast, startEdit]);
+
+  // ─── TOGGLE COLLAPSE ───
+  const toggleCollapse = useCallback((cat) => {
+    setCollapsed(prev => ({ ...prev, [cat]: !prev[cat] }));
+  }, []);
+
+  // ─── RENDER ───
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#0a0a2e" }}>
-      {/* HEADER */}
-      <div style={{ padding: "12px 16px 8px", background: "linear-gradient(180deg,#0a0a2e,rgba(10,10,46,0.95))", borderBottom: "1px solid rgba(0,255,238,0.15)", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-          <div style={{ color: "#0ff5ee", fontWeight: 700, fontSize: 15, letterSpacing: "0.1em" }}>💀 DCB MOBILE</div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setAdding(!adding)} style={{ background: adding ? "#ff6ec7" : "rgba(0,255,238,0.15)", border: "none", borderRadius: 20, color: adding ? "#1a0020" : "#0ff5ee", padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{adding ? "✕" : "+ ADD"}</button>
-          </div>
-        </div>
-        {/* SEARCH */}
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 Search notes..." style={{ width: "100%", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(0,255,238,0.15)", borderRadius: 8, color: "#fff", padding: "10px 14px", fontSize: 14, outline: "none", marginBottom: 10 }} />
-        {/* CATEGORY TABS */}
-        <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 6, WebkitOverflowScrolling: "touch" }}>
-          <button onClick={() => setFilter("ALL")} style={{ flexShrink: 0, background: filter === "ALL" ? "rgba(0,255,238,0.2)" : "rgba(255,255,255,0.05)", border: filter === "ALL" ? "1px solid #0ff5ee" : "1px solid rgba(255,255,255,0.1)", borderRadius: 16, color: filter === "ALL" ? "#0ff5ee" : "rgba(255,255,255,0.5)", padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>ALL {ideas.length}</button>
-          {CAT_KEYS.map(cat => {
-            const cnt = counts[cat] || 0;
+    React.createElement("div", { style: { height: "100%", display: "flex", flexDirection: "column", background: "#0a0a2e" } },
+      // HEADER
+      React.createElement("div", { style: { padding: "10px 14px 6px", background: "linear-gradient(180deg,#0a0a2e,rgba(10,10,46,0.95))", borderBottom: "1px solid rgba(0,255,238,0.15)", flexShrink: 0 } },
+        React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
+          React.createElement("div", { style: { color: "#0ff5ee", fontWeight: 700, fontSize: 14, letterSpacing: "0.1em" } }, "\u{1F480} DCB v2"),
+          React.createElement("div", { style: { display: "flex", gap: 6 } },
+            React.createElement("button", { onClick: copyMarkdown, style: hdrBtn() }, "\u{1F4CB}"),
+            React.createElement("button", { onClick: exportJSON, style: hdrBtn() }, "\u{1F4BE}"),
+            React.createElement("button", { onClick: () => fileInputRef.current && fileInputRef.current.click(), style: hdrBtn() }, "\u{1F4C2}"),
+            React.createElement("button", { onClick: resetAll, style: hdrBtn() }, "\u{1F504}"),
+          ),
+          React.createElement("input", { ref: fileInputRef, type: "file", accept: ".json", onChange: importJSON, style: { display: "none" } }),
+        ),
+        // SEARCH
+        React.createElement("input", { value: search, onChange: e => setSearch(e.target.value), placeholder: "\u{1F50D} Search notes...", style: { width: "100%", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(0,255,238,0.15)", borderRadius: 8, color: "#fff", padding: "9px 12px", fontSize: 13, outline: "none", marginBottom: 8 } }),
+        // CATEGORY TABS
+        React.createElement("div", { style: { display: "flex", gap: 5, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" } },
+          React.createElement("button", { onClick: () => { setFilter("ALL"); setStatusFilter("ALL"); }, style: catTabStyle(filter === "ALL", "#0ff5ee") }, `ALL ${notes.length}`),
+          CAT_KEYS.map(cat => {
+            const cnt = catCounts[cat] || 0;
             if (!cnt) return null;
-            const active = filter === cat;
             const co = COLORS[CATEGORIES[cat].color];
-            return <button key={cat} onClick={() => setFilter(active ? "ALL" : cat)} style={{ flexShrink: 0, background: active ? co.bg + "33" : "rgba(255,255,255,0.05)", border: active ? `1px solid ${co.bg}` : "1px solid rgba(255,255,255,0.1)", borderRadius: 16, color: active ? co.bg : "rgba(255,255,255,0.5)", padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>{CATEGORIES[cat].icon} {SHORT_NAMES[cat]} {cnt}</button>;
-          })}
-        </div>
-      </div>
+            return React.createElement("button", { key: cat, onClick: () => { setFilter(filter === cat ? "ALL" : cat); setStatusFilter("ALL"); }, style: catTabStyle(filter === cat, co.bg) }, `${CATEGORIES[cat].icon} ${cat === "COMEDY RULES" ? "COMEDY" : cat} ${cnt}`);
+          }),
+        ),
+        // STATUS SUB-FILTER
+        React.createElement("div", { style: { display: "flex", gap: 4, marginTop: 4, paddingBottom: 2 } },
+          React.createElement("button", { onClick: () => setStatusFilter("ALL"), style: statusPillStyle(statusFilter === "ALL") }, "ALL"),
+          STATUS_KEYS.map(s => {
+            const cnt = statusCounts[s] || 0;
+            return React.createElement("button", { key: s, onClick: () => setStatusFilter(statusFilter === s ? "ALL" : s), style: statusPillStyle(statusFilter === s) }, `${STATUSES[s].icon} ${cnt}`);
+          }),
+        ),
+      ),
 
-      {/* ADD PANEL */}
-      {adding && (
-        <div style={{ padding: "12px 16px", background: "rgba(255,110,199,0.08)", borderBottom: "1px solid rgba(255,110,199,0.2)", flexShrink: 0 }}>
-          <select value={newCat} onChange={e => setNewCat(e.target.value)} style={{ width: "100%", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,110,199,0.2)", borderRadius: 8, color: "#fff", padding: "8px 12px", fontSize: 13, marginBottom: 8, outline: "none" }}>
-            {CAT_KEYS.map(c => <option key={c} value={c}>{CATEGORIES[c].icon} {c}</option>)}
-          </select>
-          <textarea ref={inputRef} value={newText} onChange={e => setNewText(e.target.value)} placeholder="Fire away..." rows={3} style={{ width: "100%", background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,110,199,0.2)", borderRadius: 8, color: "#fff", padding: "10px 12px", fontSize: 14, outline: "none", resize: "none", lineHeight: 1.5 }} />
-          <button onClick={addNote} disabled={!newText.trim()} style={{ width: "100%", marginTop: 8, background: newText.trim() ? "#ff6ec7" : "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, color: newText.trim() ? "#1a0020" : "rgba(255,255,255,0.3)", padding: "12px", fontSize: 14, fontWeight: 700, cursor: newText.trim() ? "pointer" : "default" }}>ADD NOTE</button>
-        </div>
-      )}
+      // COUNT BAR
+      React.createElement("div", { style: { padding: "5px 14px", fontSize: 11, color: "rgba(255,255,255,0.35)", borderBottom: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 } },
+        `${filtered.length} notes${search ? ` matching "${search}"` : ""}`,
+      ),
 
-      {/* COUNT BAR */}
-      <div style={{ padding: "6px 16px", fontSize: 11, color: "rgba(255,255,255,0.35)", borderBottom: "1px solid rgba(255,255,255,0.05)", flexShrink: 0 }}>
-        {filtered.length} notes{search ? ` matching "${search}"` : ""}{pinnedCount ? ` · ${pinnedCount} pinned` : ""}
-      </div>
+      // NOTE LIST
+      React.createElement("div", { ref: listRef, style: { flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "6px 10px 90px" } },
+        grouped.map(group => {
+          const catInfo = CATEGORIES[group.category] || { color: "cyan", icon: "\u{1F4DD}" };
+          const co = COLORS[catInfo.color];
+          const isCollapsed = collapsed[group.category];
+          return React.createElement("div", { key: group.category },
+            // Section header
+            React.createElement("div", {
+              onClick: () => toggleCollapse(group.category),
+              style: {
+                position: "sticky", top: 0, zIndex: 10,
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "8px 12px", marginBottom: 4, marginTop: 6,
+                background: "rgba(10,10,46,0.97)", borderLeft: `4px solid ${co.bg}`,
+                borderBottom: "1px solid rgba(255,255,255,0.08)", cursor: "pointer",
+              }
+            },
+              React.createElement("span", { style: { fontSize: 12, fontWeight: 700, color: co.bg } }, `${catInfo.icon} ${group.category}`),
+              React.createElement("span", { style: { fontSize: 11, color: "rgba(255,255,255,0.4)" } }, `${group.notes.length} ${isCollapsed ? "\u25B6" : "\u25BC"}`),
+            ),
+            // Notes
+            !isCollapsed && group.notes.map(note => {
+              const nCo = COLORS[(CATEGORIES[note.category] || { color: "cyan" }).color];
+              const isOpen = expanded === note.id;
+              const isEditing = editing === note.id;
+              const isSwiping = swipeState.id === note.id;
+              const dx = isSwiping ? swipeState.dx : 0;
+              const swipeLeft = dx < -80;
+              const swipeRight = dx > 80;
 
-      {/* NOTE LIST */}
-      <div ref={listRef} style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", padding: "8px 12px 80px" }}>
-        {filtered.map(idea => {
-          const cat = CATEGORIES[idea.cat] || { color: "yellow", icon: "📝" };
-          const co = COLORS[cat.color];
-          const isOpen = expanded === idea.id;
-          return (
-            <div key={idea.id} onClick={() => setExpanded(isOpen ? null : idea.id)} style={{
-              background: co.bg, color: co.text, borderLeft: `4px solid ${co.border}`,
-              borderRadius: 4, padding: isOpen ? "14px 14px 10px" : "10px 14px",
-              marginBottom: 8, cursor: "pointer", transition: "all 0.15s ease",
-              boxShadow: isOpen ? `0 4px 20px rgba(0,0,0,0.3), 0 0 0 1px ${co.border}` : "0 1px 4px rgba(0,0,0,0.15)",
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", opacity: 0.6 }}>{cat.icon} {SHORT_NAMES[idea.cat] || idea.cat}</span>
-                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                  {idea.pinned && <span style={{ fontSize: 11 }}>📌</span>}
-                  <span style={{ fontSize: 10, opacity: 0.4 }}>{isOpen ? "▲" : "▼"}</span>
-                </div>
-              </div>
-              {isOpen && editing === idea.id ? (
-                <div onClick={e => e.stopPropagation()} style={{ marginTop: 4 }}>
-                  <select value={editCat} onChange={e => setEditCat(e.target.value)} style={{ width: "100%", background: "rgba(0,0,0,0.1)", border: "1px solid rgba(0,0,0,0.2)", borderRadius: 6, color: co.text, padding: "8px 10px", fontSize: 12, marginBottom: 6, outline: "none" }}>
-                    {CAT_KEYS.map(c => <option key={c} value={c}>{CATEGORIES[c].icon} {c}</option>)}
-                  </select>
-                  <textarea ref={editRef} value={editText} onChange={e => setEditText(e.target.value)} rows={5} style={{ width: "100%", background: "rgba(0,0,0,0.08)", border: "1px solid rgba(0,0,0,0.2)", borderRadius: 6, color: co.text, padding: "10px 12px", fontSize: 13, lineHeight: 1.5, outline: "none", resize: "vertical" }} />
-                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                    <button onClick={saveEdit} style={{ flex: 1, background: "rgba(0,0,0,0.2)", border: "none", borderRadius: 6, color: co.text, padding: "10px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>✓ SAVE</button>
-                    <button onClick={() => setEditing(null)} style={{ flex: 1, background: "rgba(0,0,0,0.08)", border: "none", borderRadius: 6, color: co.text, padding: "10px", fontSize: 13, cursor: "pointer", opacity: 0.7 }}>CANCEL</button>
-                  </div>
-                </div>
-              ) : (
-                <div style={{
-                  fontSize: 13, lineHeight: 1.5,
-                  overflow: isOpen ? "visible" : "hidden",
-                  display: isOpen ? "block" : "-webkit-box",
-                  WebkitLineClamp: isOpen ? "unset" : 2,
-                  WebkitBoxOrient: "vertical",
-                }}>{idea.text}</div>
-              )}
-              {isOpen && editing !== idea.id && (
-                <div style={{ marginTop: 10 }}>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <button onClick={e => { e.stopPropagation(); startEdit(idea); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "7px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>✏️ EDIT</button>
-                    <button onClick={e => { e.stopPropagation(); togglePin(idea.id); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "7px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{idea.pinned ? "📌 UNPIN" : "📌 PIN"}</button>
-                    <button onClick={e => { e.stopPropagation(); moveNote(idea.id, "up"); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "7px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>⬆️</button>
-                    <button onClick={e => { e.stopPropagation(); moveNote(idea.id, "down"); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "7px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>⬇️</button>
-                    <button onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(idea.text).then(() => showToast("Copied!")); }} style={{ background: "rgba(0,0,0,0.1)", border: "none", borderRadius: 4, color: co.text, padding: "7px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", opacity: 0.7 }}>📋 COPY</button>
-                    <button onClick={e => { e.stopPropagation(); deleteNote(idea.id); }} style={{ background: "rgba(255,50,50,0.15)", border: "none", borderRadius: 4, color: "#cc0000", padding: "7px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>🗑 DELETE</button>
-                  </div>
-                </div>
-              )}
-            </div>
+              return React.createElement("div", {
+                key: note.id,
+                "data-note-id": note.id,
+                "data-category": note.category,
+                "data-status": note.status,
+                style: { position: "relative", marginBottom: 6 },
+              },
+                // Swipe underline indicators
+                (isSwiping && swipeLeft) && React.createElement("div", { style: { position: "absolute", bottom: 0, left: 0, right: 0, height: 3, background: "#ff4444", borderRadius: 2, zIndex: 1 } }),
+                (isSwiping && swipeRight) && React.createElement("div", { style: { position: "absolute", bottom: 0, left: 0, right: 0, height: 3, background: "#44ff44", borderRadius: 2, zIndex: 1 } }),
+                // Card
+                React.createElement("div", {
+                  onTouchStart: (e) => onTouchStart(e, note.id),
+                  onTouchMove: (e) => onTouchMove(e, note.id),
+                  onTouchEnd: (e) => onTouchEnd(e, note.id),
+                  onClick: () => { if (!isSwiping) setExpanded(isOpen ? null : note.id); },
+                  style: {
+                    background: note.pinned ? nCo.bg + "12" : "rgba(255,255,255,0.04)",
+                    borderLeft: `4px solid ${nCo.bg}`,
+                    borderRadius: 6, padding: isOpen ? "12px 12px 10px" : "10px 12px",
+                    cursor: "pointer", transition: "transform 0.1s ease",
+                    transform: isSwiping ? `translateX(${dx * 0.3}px)` : "none",
+                    boxShadow: isOpen ? `0 2px 12px rgba(0,0,0,0.3)` : "none",
+                  }
+                },
+                  // Top row: status pill
+                  React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 } },
+                    React.createElement("div", { style: { display: "flex", gap: 4, alignItems: "center" } },
+                      note.pinned && React.createElement("span", { style: { fontSize: 10 } }, "\u{1F4CC}"),
+                    ),
+                    React.createElement("button", {
+                      onClick: (e) => { e.stopPropagation(); dispatch({ type: "CYCLE_STATUS", id: note.id }); const n2 = notes.find(x=>x.id===note.id); const idx = STATUS_CYCLE.indexOf(n2 ? n2.status : "NEW"); const next = STATUS_CYCLE[(idx+1)%STATUS_CYCLE.length]; showToast(`${STATUSES[next].icon} ${next}`); },
+                      style: { background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 10, color: "rgba(255,255,255,0.7)", padding: "2px 8px", fontSize: 10, fontWeight: 600, cursor: "pointer" },
+                    }, `${STATUSES[note.status] ? STATUSES[note.status].icon : ""} ${note.status}`),
+                  ),
+                  // Edit mode
+                  isOpen && isEditing ? (
+                    React.createElement("div", { onClick: e => e.stopPropagation(), style: { marginTop: 4 } },
+                      React.createElement("div", { style: { display: "flex", gap: 6, marginBottom: 6 } },
+                        React.createElement("select", { value: editCat, onChange: e => setEditCat(e.target.value), style: editSelectStyle() },
+                          CAT_KEYS.map(c => React.createElement("option", { key: c, value: c }, `${CATEGORIES[c].icon} ${c}`)),
+                        ),
+                        React.createElement("select", { value: editStatus, onChange: e => setEditStatus(e.target.value), style: editSelectStyle() },
+                          STATUS_KEYS.map(s => React.createElement("option", { key: s, value: s }, `${STATUSES[s].icon} ${s}`)),
+                        ),
+                      ),
+                      React.createElement("textarea", { ref: editRef, value: editText, onChange: e => setEditText(e.target.value), rows: 5, style: { width: "100%", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, color: "#fff", padding: "10px", fontSize: 13, lineHeight: 1.5, outline: "none", resize: "vertical" } }),
+                      React.createElement("div", { style: { display: "flex", gap: 8, marginTop: 8 } },
+                        React.createElement("button", { onClick: saveEdit, style: { flex: 1, background: "#0ff5ee", border: "none", borderRadius: 6, color: "#0a0a2e", padding: "10px", fontSize: 13, fontWeight: 700, cursor: "pointer" } }, "\u2713 SAVE"),
+                        React.createElement("button", { onClick: () => setEditing(null), style: { flex: 1, background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 6, color: "#fff", padding: "10px", fontSize: 13, cursor: "pointer", opacity: 0.7 } }, "CANCEL"),
+                      ),
+                    )
+                  ) : (
+                    // Text content
+                    React.createElement("div", {
+                      style: {
+                        fontSize: 14, lineHeight: 1.5, color: "rgba(255,255,255,0.88)",
+                        overflow: isOpen ? "visible" : "hidden",
+                        display: isOpen ? "block" : "-webkit-box",
+                        WebkitLineClamp: isOpen ? "unset" : 3,
+                        WebkitBoxOrient: "vertical",
+                      }
+                    }, boldPrefix(note.text)),
+                  ),
+                  // Actions when open
+                  isOpen && !isEditing && React.createElement("div", { style: { marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" } },
+                    React.createElement("button", { onClick: e => { e.stopPropagation(); startEdit(note); }, style: cardActionBtn() }, "\u270F\uFE0F EDIT"),
+                    React.createElement("button", { onClick: e => { e.stopPropagation(); dispatch({ type: "TOGGLE_PIN", id: note.id }); showToast(note.pinned ? "Unpinned" : "Pinned \u{1F4CC}"); }, style: cardActionBtn() }, note.pinned ? "\u{1F4CC} UNPIN" : "\u{1F4CC} PIN"),
+                    React.createElement("button", { onClick: e => { e.stopPropagation(); navigator.clipboard.writeText(note.text).then(() => showToast("Copied!")); }, style: cardActionBtn() }, "\u{1F4CB} COPY"),
+                    React.createElement("button", { onClick: e => { e.stopPropagation(); dispatch({ type: "DELETE_NOTE", id: note.id }); showToast("Deleted \u2014 tap UNDO", 5000); }, style: { ...cardActionBtn(), background: "rgba(255,50,50,0.15)", color: "#ff6666" } }, "\u{1F5D1} DEL"),
+                  ),
+                ),
+              );
+            }),
           );
-        })}
-        {filtered.length === 0 && (
-          <div style={{ textAlign: "center", padding: 40, color: "rgba(255,255,255,0.25)", fontSize: 14 }}>No notes found</div>
-        )}
-      </div>
+        }),
+        filtered.length === 0 && React.createElement("div", { style: { textAlign: "center", padding: 40, color: "rgba(255,255,255,0.25)", fontSize: 14 } }, "No notes found"),
+      ),
 
-      {/* TOAST */}
-      {(toast || deleted) && (
-        <div style={{ position: "fixed", bottom: 20, left: 16, right: 16, background: "rgba(10,10,46,0.95)", border: "1px solid rgba(0,255,238,0.3)", borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", zIndex: 9999, backdropFilter: "blur(10px)" }}>
-          <span style={{ fontSize: 13, color: "#fff" }}>{toast}</span>
-          {deleted && <button onClick={undoDelete} style={{ background: "none", border: "1px solid #0ff5ee", borderRadius: 4, color: "#0ff5ee", padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>UNDO</button>}
-        </div>
-      )}
-    </div>
+      // QUICK CAPTURE BAR
+      React.createElement("div", { style: { position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(10,10,46,0.97)", borderTop: "1px solid rgba(0,255,238,0.2)", padding: "8px 10px", paddingBottom: "calc(8px + env(safe-area-inset-bottom))", display: "flex", gap: 8, alignItems: "center", zIndex: 1000, backdropFilter: "blur(10px)" } },
+        React.createElement("button", { onClick: cycleQuickCat, style: { flexShrink: 0, background: COLORS[CATEGORIES[quickCat].color].bg + "22", border: `1px solid ${COLORS[CATEGORIES[quickCat].color].bg}`, borderRadius: 14, color: COLORS[CATEGORIES[quickCat].color].bg, padding: "6px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" } }, `${CATEGORIES[quickCat].icon} ${quickCat === "COMEDY RULES" ? "COMEDY" : quickCat}`),
+        React.createElement("input", { ref: quickInputRef, value: quickText, onChange: e => setQuickText(e.target.value), onKeyDown: e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addQuick(); } }, placeholder: "fire away...", style: { flex: 1, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 8, color: "#fff", padding: "9px 12px", fontSize: 14, outline: "none" } }),
+        React.createElement("button", { onClick: addQuick, disabled: !quickText.trim(), style: { flexShrink: 0, background: quickText.trim() ? "#0ff5ee" : "rgba(255,255,255,0.08)", border: "none", borderRadius: 8, color: quickText.trim() ? "#0a0a2e" : "rgba(255,255,255,0.3)", padding: "9px 14px", fontSize: 13, fontWeight: 700, cursor: quickText.trim() ? "pointer" : "default" } }, "SEND"),
+      ),
+
+      // TOAST
+      (toast || deleted) && React.createElement("div", { style: { position: "fixed", bottom: 70, left: 14, right: 14, background: "rgba(10,10,46,0.95)", border: "1px solid rgba(0,255,238,0.3)", borderRadius: 10, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", zIndex: 9999, backdropFilter: "blur(10px)" } },
+        React.createElement("span", { style: { fontSize: 13, color: "#fff" } }, toast),
+        deleted && React.createElement("button", { onClick: () => { dispatch({ type: "UNDO_DELETE" }); showToast("Restored \u2713"); }, style: { background: "none", border: "1px solid #0ff5ee", borderRadius: 4, color: "#0ff5ee", padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" } }, "UNDO"),
+      ),
+    )
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+// ─── STYLE HELPERS ───
+function hdrBtn() {
+  return { background: "rgba(0,255,238,0.1)", border: "1px solid rgba(0,255,238,0.2)", borderRadius: 6, color: "#0ff5ee", padding: "6px 10px", fontSize: 13, cursor: "pointer" };
+}
+function catTabStyle(active, color) {
+  return { flexShrink: 0, background: active ? color + "33" : "rgba(255,255,255,0.05)", border: active ? `1px solid ${color}` : "1px solid rgba(255,255,255,0.1)", borderRadius: 14, color: active ? color : "rgba(255,255,255,0.5)", padding: "4px 10px", fontSize: 10, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" };
+}
+function statusPillStyle(active) {
+  return { background: active ? "rgba(0,255,238,0.15)" : "rgba(255,255,255,0.04)", border: active ? "1px solid rgba(0,255,238,0.4)" : "1px solid rgba(255,255,255,0.08)", borderRadius: 10, color: active ? "#0ff5ee" : "rgba(255,255,255,0.4)", padding: "3px 8px", fontSize: 10, fontWeight: 600, cursor: "pointer" };
+}
+function cardActionBtn() {
+  return { background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 4, color: "rgba(255,255,255,0.7)", padding: "6px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" };
+}
+function editSelectStyle() {
+  return { flex: 1, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, color: "#fff", padding: "7px 8px", fontSize: 12, outline: "none" };
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 </script>
 </body>
 </html>
-<!-- cache bust 1774540803 -->
